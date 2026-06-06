@@ -30,7 +30,7 @@ export default function InstituteLogin() {
         {/* Logo */}
         <div className="text-center mb-8">
           <Link href="/">
-            <img src="/logo.jpeg" alt="SYNCOPTRAC" className="h-20 w-20 object-cover rounded-2xl mx-auto mb-4 shadow-lg cursor-pointer" />
+            <img src="/logo.png" alt="SYNCOPTRAC" className="h-20 w-20 object-cover rounded-2xl mx-auto mb-4 shadow-lg cursor-pointer" />
           </Link>
           <h1 className="text-2xl font-bold">
             <span style={{color:"#5ce1e6"}}>SYNCOP</span>

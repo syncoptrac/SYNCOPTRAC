@@ -11,7 +11,7 @@ export default function Document() {
         <meta property="og:title" content="SYNCOPTRAC — Where communication gets organised" />
         <meta property="og:description" content="Manage students, attendance, fees, and enquiries in one simple dashboard." />
         <meta property="og:type" content="website" />
-        <link rel="icon" href="/logo.jpeg" type="image/jpeg" />
+        <link rel="icon" href="/logo.png" type="image/jpeg" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </Head>
