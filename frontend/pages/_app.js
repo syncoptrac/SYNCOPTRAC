@@ -57,8 +57,7 @@ export default function App({ Component, pageProps }) {
     const handleStart = () => setTransitioning(true);
     const handleDone = () => {
       setPageKey(router.pathname);
-      // Small delay before fading in so the new page renders first
-      setTimeout(() => setTransitioning(false), 60);
+      setTransitioning(false);
     };
 
     router.events.on('routeChangeStart', handleStart);
@@ -81,9 +80,8 @@ export default function App({ Component, pageProps }) {
           opacity: transitioning ? 0 : 1,
           transform: transitioning ? 'translateY(8px) scale(0.995)' : 'translateY(0) scale(1)',
           filter: transitioning ? 'blur(3px)' : 'blur(0px)',
-          transition: 'opacity 0.35s cubic-bezier(0.16,1,0.3,1), transform 0.35s cubic-bezier(0.16,1,0.3,1), filter 0.3s ease',
+          transition: 'opacity 0.3s ease, transform 0.3s ease, filter 0.3s ease',
           willChange: 'opacity, transform, filter',
-          minHeight: '100vh',
         }}
       >
         <Component {...pageProps} />

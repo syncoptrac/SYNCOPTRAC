@@ -1,12 +1,21 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import api, { setAuth } from '../../lib/api';
+import api, { setAuth, getUser } from '../../lib/api';
 import toast from 'react-hot-toast';
+import Link from 'next/link';
 
 export default function AdminLogin() {
   const [form, setForm] = useState({ username: '', password: '' });
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+
+  // If already logged in, redirect instead of trapping user on login page.
+  useEffect(() => {
+    const user = getUser();
+    if (!user) return;
+    if (user.role === 'admin') router.replace('/admin/dashboard');
+    else if (user.role === 'institute') router.replace('/institute/dashboard');
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -73,10 +82,15 @@ export default function AdminLogin() {
           </form>
         </div>
 
-        <p className="text-center text-gray-600 text-xs mt-6">
-          Institute login?{' '}
-          <a href="/institute/login" className="text-brand-gold hover:underline">Click here</a>
-        </p>
+        <div className="mt-5 text-center space-y-2">
+          <p className="text-gray-600 text-xs">
+            Institute login?{' '}
+            <Link href="/institute/login" className="text-brand-gold hover:underline">Click here</Link>
+          </p>
+          <p className="text-gray-700 text-xs">
+            <Link href="/" className="text-gray-500 hover:text-brand-gold">← Back to Home</Link>
+          </p>
+        </div>
       </div>
     </div>
   );

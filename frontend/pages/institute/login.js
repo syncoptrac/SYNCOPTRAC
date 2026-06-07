@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import api, { setAuth } from '../../lib/api';
+import api, { setAuth, getUser } from '../../lib/api';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
 
@@ -8,6 +8,15 @@ export default function InstituteLogin() {
   const [form, setForm] = useState({ loginId: '', password: '' });
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+
+  // If already logged in, redirect to the right dashboard instead of
+  // trapping the user on the login page with no way back to home.
+  useEffect(() => {
+    const user = getUser();
+    if (!user) return;
+    if (user.role === 'institute') router.replace('/institute/dashboard');
+    else if (user.role === 'admin') router.replace('/admin/dashboard');
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -87,6 +96,9 @@ export default function InstituteLogin() {
           <p className="text-gray-700 text-xs">
             Admin?{' '}
             <Link href="/admin/login" className="text-gray-500 hover:text-brand-gold">Admin Login</Link>
+          </p>
+          <p className="text-gray-700 text-xs">
+            <Link href="/" className="text-gray-500 hover:text-brand-gold">← Back to Home</Link>
           </p>
         </div>
       </div>
