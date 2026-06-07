@@ -42,7 +42,6 @@ export default function InstituteLogin() {
           <p className="text-gray-600 text-xs italic mt-1">Where communication gets organised</p>
         </div>
 
-        {/* Session displaced warning */}
         {displaced && (
           <div style={{
             marginBottom: 16, padding: '14px 16px', borderRadius: 12,

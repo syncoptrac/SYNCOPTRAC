@@ -39,6 +39,14 @@ const requireInstitute = async (req, res, next) => {
     // Single-session check: verify this token's sessionId matches what's in DB
     // If someone logged in on another device, the DB sessionId will be different
     try {
+      // Tokens without sessionId are old/pre-fix — reject them to force re-login
+      if (!req.user.sessionId) {
+        return res.status(401).json({
+          error: 'SESSION_DISPLACED',
+          message: 'Your session has expired. Please log in again.',
+        });
+      }
+
       const institute = await Institute.findById(req.user.id).select('currentSessionId isActive');
       if (!institute || !institute.isActive) {
         return res.status(401).json({ error: 'Account not found or inactive' });
