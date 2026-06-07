@@ -60,7 +60,7 @@ const globalLimiter = rateLimit({
 });
 app.use(globalLimiter);
 
-// ─── Stricter limiter for auth endpoints ──────────────────────────────────────
+// ─── Stricter limiter for auth endpoints (login only) ─────────────────────────
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20, // max 20 login attempts per 15 min
@@ -69,16 +69,27 @@ const authLimiter = rateLimit({
   message: { error: 'Too many login attempts, please try again in 15 minutes.' },
 });
 
+// ─── Generous limiter for session polling (every 4s per user) ─────────────────
+const sessionPollLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute window
+  max: 60,             // 60 polls/min per IP (well above our 15/min rate)
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many session checks.' },
+});
+
 // ─── Stricter limiter for public lead submissions ─────────────────────────────
 const leadLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 10, // max 10 form submissions per IP per hour
+  windowMs: 60 * 60 * 1000,
+  max: 10,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many submissions from this IP, please try again later.' },
 });
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
+// verify-session MUST be mounted before authLimiter — it's a frequent poll, not a login
+app.use('/api/auth/verify-session', sessionPollLimiter, authRoutes);
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/institute', instituteRoutes);

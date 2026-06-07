@@ -5,9 +5,6 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 const api = axios.create({
   baseURL: API_URL,
-  // FIX: Apps Script cold-starts take 8–15s. 15000ms was timing out before
-  // the backend even received the response, causing false "Failed to load" errors.
-  // 30s gives enough headroom for cold starts without hanging forever.
   timeout: 30000,
 });
 
@@ -18,7 +15,16 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle 401 - redirect to login, with special handling for session displacement
+// Central displacement handler — called from interceptor AND poll
+export const handleDisplaced = () => {
+  Cookies.remove('token', { path: '/' });
+  Cookies.remove('user', { path: '/' });
+  if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+    window.location.href = '/institute/login?reason=displaced';
+  }
+};
+
+// Handle 401 responses globally
 api.interceptors.response.use(
   (res) => res,
   (err) => {
@@ -26,21 +32,12 @@ api.interceptors.response.use(
       const data = err.response?.data;
       const url = err.config?.url || '';
 
-      // Session displaced — someone logged in on another device
       if (data?.error === 'SESSION_DISPLACED') {
-        Cookies.remove('token', { path: '/' });
-        Cookies.remove('user', { path: '/' });
-        if (typeof window !== 'undefined') {
-          // Avoid redirect loop if already on login page
-          if (!window.location.pathname.includes('/login')) {
-            window.location.href = '/institute/login?reason=displaced';
-          }
-        }
+        handleDisplaced();
         return Promise.reject(err);
       }
 
-      // Normal 401 — only redirect on verify endpoint
-      if (url.includes('/api/auth/verify')) {
+      if (url.includes('/api/auth/verify') && !url.includes('verify-session')) {
         Cookies.remove('token', { path: '/' });
         Cookies.remove('user', { path: '/' });
         if (typeof window !== 'undefined') {
@@ -65,12 +62,7 @@ export const getUser = () => {
 };
 
 export const setAuth = (token, user) => {
-  const opts = {
-    expires: 7,
-    path: '/',
-    secure: true,
-    sameSite: 'Strict',
-  };
+  const opts = { expires: 7, path: '/', secure: true, sameSite: 'Strict' };
   Cookies.set('token', token, opts);
   Cookies.set('user', JSON.stringify(user), opts);
 };

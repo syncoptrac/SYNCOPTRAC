@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { clearAuth, getUser } from '../../lib/api';
+import { clearAuth, getUser, handleDisplaced } from '../../lib/api';
 import api from '../../lib/api';
 
 const NAV = [
@@ -28,7 +28,6 @@ const NAV = [
 export default function InstituteLayout({ children, title }) {
   const router = useRouter();
   const user = getUser();
-  const pollRef = useRef(null);
 
   const logout = () => {
     clearAuth();
@@ -36,22 +35,27 @@ export default function InstituteLayout({ children, title }) {
     window.location.href = '/institute/login';
   };
 
-  // Poll session validity every 5 seconds — kicks out instantly when someone else logs in
+  // Poll every 4 seconds — forces logout the moment someone else logs in
   useEffect(() => {
+    let alive = true;
+
     const checkSession = async () => {
+      if (!alive) return;
       try {
-        await api.get('/api/auth/verify-session');
+        // Short 6s timeout — don't wait for Render cold start
+        await api.get('/api/auth/verify-session', { timeout: 6000 });
       } catch (err) {
-        // SESSION_DISPLACED is handled by the axios interceptor in api.js
-        // which redirects to /institute/login?reason=displaced automatically
+        if (!alive) return;
+        if (err?.response?.data?.error === 'SESSION_DISPLACED') {
+          handleDisplaced();
+        }
+        // Network timeout / backend sleeping = ignore, try again next tick
       }
     };
 
-    // Check immediately on mount, then every 5 seconds
     checkSession();
-    pollRef.current = setInterval(checkSession, 5000);
-
-    return () => clearInterval(pollRef.current);
+    const timer = setInterval(checkSession, 4000);
+    return () => { alive = false; clearInterval(timer); };
   }, []);
 
   return (
