@@ -90,7 +90,7 @@ export default function HomePage() {
                 boxShadow: '0 0 16px rgba(92,225,230,0.12)',
               }}
             >
-              <span style={{ color: '#5ce1e6' }}>S</span><span style={{ color: '#ffffff' }}>YNC</span><span style={{ color: '#5ce1e6' }}>O</span><span style={{ color: '#ffffff' }}>PTRAC</span>
+              <span style={{ color: '#ffffff' }}>Why </span><span style={{ color: '#5ce1e6' }}>S</span><span style={{ color: '#ffffff' }}>YNCOPTRAC</span>
             </div>
             <h2 className="text-3xl md:text-4xl font-extrabold text-gray-900 mb-4" style={{ letterSpacing: '-0.02em' }}>
               Built Around One Simple Idea
