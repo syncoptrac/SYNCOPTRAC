@@ -24,93 +24,9 @@ const NAV = [
   )},
 ];
 
-// Sidebar nav items (desktop only) — same set with 16px icons
-const NAV_DESKTOP = NAV.map(n => ({
-  ...n,
-  icon: <span style={{ transform: 'scale(0.73)', display: 'inline-flex' }}>{n.icon}</span>,
-}));
-
-function SidebarContent({ user, pathname, onClose, onLogout }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{ padding: '20px', borderBottom: '1px solid rgba(92,225,230,0.1)', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{ position: 'relative' }}>
-            <img src="/logo.png" alt="SYNCOPTRAC" style={{ height: 38, width: 38, objectFit: 'cover', borderRadius: 10, boxShadow: '0 0 14px rgba(92,225,230,0.2)' }} />
-            <div style={{ position: 'absolute', inset: 0, borderRadius: 10, boxShadow: 'inset 0 0 0 1px rgba(92,225,230,0.15)' }} />
-          </div>
-          <div>
-            <p style={{ fontWeight: 800, fontSize: '0.9rem', lineHeight: 1, letterSpacing: '-0.01em' }}>
-              <span style={{ color: '#5ce1e6' }}>S</span><span style={{ color: '#ffffff' }}>YNCOPTRAC</span>
-            </p>
-            <p style={{ fontSize: '11px', marginTop: 3, color: 'rgba(160,180,165,0.55)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>
-              {user?.instituteName || 'Institute'}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <nav style={{ flex: 1, padding: '12px 10px', overflowY: 'auto' }}>
-        <p style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'rgba(160,180,165,0.3)', padding: '4px 10px 8px' }}>Menu</p>
-        {NAV.map(item => {
-          const active = pathname === item.href;
-          return (
-            <Link key={item.href} href={item.href} onClick={onClose} style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              padding: '9px 12px', borderRadius: 10, marginBottom: 2,
-              fontSize: '0.875rem', fontWeight: active ? 600 : 500,
-              textDecoration: 'none',
-              color: active ? '#ffffff' : 'rgba(180,200,240,0.65)',
-              background: active ? 'linear-gradient(135deg, #d4af37, #f0c040)' : 'transparent',
-              boxShadow: active ? '0 2px 12px rgba(92,225,230,0.28)' : 'none',
-              transition: 'all 0.2s cubic-bezier(0.16,1,0.3,1)',
-            }}
-              onMouseEnter={e => { if (!active) { e.currentTarget.style.background = 'rgba(92,225,230,0.10)'; e.currentTarget.style.color = '#f0c040'; } }}
-              onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(180,200,240,0.65)'; } }}
-            >
-              <span style={{ opacity: active ? 1 : 0.7, flexShrink: 0 }}>{item.icon}</span>
-              {item.label}
-              {active && <span style={{ marginLeft: 'auto', width: 6, height: 6, borderRadius: '50%', background: 'rgba(17,36,93,0.4)' }} />}
-            </Link>
-          );
-        })}
-      </nav>
-
-      <div style={{ padding: '12px 10px', borderTop: '1px solid rgba(92,225,230,0.10)', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 10, marginBottom: 6, background: 'rgba(92,225,230,0.05)', border: '1px solid rgba(92,225,230,0.10)' }}>
-          <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(135deg, #d4af37, #f0c040)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 800, color: '#11245d', flexShrink: 0 }}>
-            {(user?.instituteName || 'I')[0].toUpperCase()}
-          </div>
-          <div style={{ overflow: 'hidden' }}>
-            <p style={{ fontSize: '12px', fontWeight: 600, color: 'rgba(220,235,225,0.85)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.instituteName || 'Institute'}</p>
-            <p style={{ fontSize: '10px', color: 'rgba(160,180,165,0.4)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.loginId || ''}</p>
-          </div>
-        </div>
-        <button onClick={onLogout} style={{ width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 10, fontSize: '0.8rem', fontWeight: 500, color: 'rgba(180,200,240,0.45)', background: 'transparent', border: 'none', cursor: 'pointer', transition: 'all 0.2s ease' }}
-          onMouseEnter={e => { e.currentTarget.style.color = '#f87171'; e.currentTarget.style.background = 'rgba(239,68,68,0.07)'; }}
-          onMouseLeave={e => { e.currentTarget.style.color = 'rgba(180,200,240,0.45)'; e.currentTarget.style.background = 'transparent'; }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-          Logout
-        </button>
-      </div>
-    </div>
-  );
-}
-
 export default function InstituteLayout({ children, title }) {
   const router = useRouter();
   const user = getUser();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [scrolled, setScrolled] = useState(false);
-
-  useEffect(() => {
-    const el = document.querySelector('main.dashboard-main');
-    if (!el) return;
-    const handler = () => setScrolled(el.scrollTop > 10);
-    el.addEventListener('scroll', handler, { passive: true });
-    return () => el.removeEventListener('scroll', handler);
-  }, []);
 
   const logout = () => {
     clearAuth();
@@ -118,129 +34,143 @@ export default function InstituteLayout({ children, title }) {
     window.location.href = '/institute/login';
   };
 
-  const sidebarProps = { user, pathname: router.pathname, onClose: () => setSidebarOpen(false), onLogout: logout };
-
   return (
-    <div style={{ display: 'flex', height: '100vh', background: '#f0f4ff', overflow: 'hidden' }}>
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100vh',
+      background: '#f0f4ff',
+      overflow: 'hidden',
+    }}>
 
-      {/* ── Main area (no sidebar — bottom tab bar on all screen sizes) ── */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
-
-        {/* Top bar */}
-        <header style={{
-          flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12,
-          padding: '0 16px', height: 56,
-          background: scrolled ? 'rgba(10,24,68,0.98)' : 'linear-gradient(135deg, #0a1844 0%, #11245d 100%)',
-          backdropFilter: 'blur(12px)',
-          borderBottom: `1px solid ${scrolled ? 'rgba(92,225,230,0.15)' : 'rgba(92,225,230,0.10)'}`,
-          boxShadow: scrolled ? '0 2px 20px rgba(0,0,0,0.25)' : '0 2px 12px rgba(0,0,0,0.15)',
-          transition: 'all 0.3s ease',
-        }}>
-          {/* Logo + brand */}
+      {/* ── Top Header ─────────────────────────────────────────────── */}
+      <header style={{
+        flexShrink: 0,
+        background: 'linear-gradient(135deg, #0a1844 0%, #11245d 100%)',
+        borderBottom: '1px solid rgba(92,225,230,0.12)',
+        boxShadow: '0 2px 16px rgba(0,0,0,0.2)',
+        padding: '10px 16px 8px',
+      }}>
+        {/* Row 1: Brand left, Institute chip right */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          {/* Brand */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <img src="/logo.png" alt="SYNCOPTRAC" style={{ height: 30, width: 30, objectFit: 'cover', borderRadius: 8 }} />
-            <span style={{ fontWeight: 800, fontSize: '0.9rem' }}>
-              <span style={{ color: '#5ce1e6' }}>S</span><span style={{ color: '#ffffff' }}>YNCOPTRAC</span>
+            <img src="/logo.png" alt="logo" style={{ height: 28, width: 28, objectFit: 'cover', borderRadius: 7, boxShadow: '0 0 10px rgba(92,225,230,0.25)' }} />
+            <span style={{ fontWeight: 800, fontSize: '0.88rem', letterSpacing: '-0.01em' }}>
+              <span style={{ color: '#5ce1e6' }}>SYNCOP</span><span style={{ color: '#ffffff' }}>TRAC</span>
             </span>
           </div>
 
-          <div style={{ flex: 1 }} />
-
-          {/* Page title (center/right) */}
-          {title && (
-            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'rgba(220,235,255,0.9)' }}>
-              {title}
-            </span>
-          )}
-
-          <div style={{ flex: 1 }} />
-
-          {/* Institute name chip */}
+          {/* Institute chip */}
           <div style={{
-            display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px',
-            background: 'rgba(92,225,230,0.06)', border: '1px solid rgba(92,225,230,0.14)', borderRadius: 20,
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '4px 10px',
+            background: 'rgba(92,225,230,0.07)',
+            border: '1px solid rgba(92,225,230,0.15)',
+            borderRadius: 20,
+            maxWidth: 160,
           }}>
-            <div style={{ width: 22, height: 22, borderRadius: '50%', background: 'linear-gradient(135deg, #d4af37, #f0c040)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 800, color: '#11245d' }}>
+            <div style={{
+              width: 20, height: 20, borderRadius: '50%',
+              background: 'linear-gradient(135deg, #d4af37, #f0c040)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '9px', fontWeight: 800, color: '#11245d', flexShrink: 0,
+            }}>
               {(user?.instituteName || 'I')[0].toUpperCase()}
             </div>
-            <span style={{ fontSize: '12px', fontWeight: 600, color: 'rgba(220,235,255,0.85)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <span style={{
+              fontSize: '11px', fontWeight: 600, color: 'rgba(220,235,255,0.85)',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
               {user?.instituteName || 'Institute'}
             </span>
           </div>
-        </header>
+        </div>
 
-        {/* Scrollable content — bottom padding for tab bar */}
-        <main className="dashboard-main" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
-          <div style={{ padding: '16px', maxWidth: 1200, margin: '0 auto', paddingBottom: 'calc(80px + env(safe-area-inset-bottom, 0px))' }}>
-            {children}
+        {/* Row 2: Page title */}
+        {title && (
+          <div style={{ marginTop: 6 }}>
+            <h1 style={{
+              margin: 0, fontSize: '1.05rem', fontWeight: 700,
+              color: '#ffffff', letterSpacing: '-0.01em',
+            }}>
+              {title}
+            </h1>
           </div>
-        </main>
+        )}
+      </header>
 
-        {/* ── Bottom Tab Bar (all screen sizes — Spotify/Airbnb pattern) ── */}
-        <nav style={{
-          position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 30,
-          background: 'rgba(10,18,58,0.97)',
-          backdropFilter: 'blur(20px) saturate(180%)',
-          WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-          borderTop: '1px solid rgba(92,225,230,0.12)',
-          boxShadow: '0 -4px 24px rgba(0,0,0,0.3)',
-          display: 'flex',
-          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-        }}>
-          {NAV.map(item => {
-            const active = router.pathname === item.href;
-            return (
-              <Link key={item.href} href={item.href} style={{
-                flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-                justifyContent: 'center', gap: 3, padding: '10px 4px 8px',
-                textDecoration: 'none',
-                color: active ? '#5ce1e6' : 'rgba(180,200,240,0.4)',
-                transition: 'color 0.2s ease',
-                position: 'relative',
-              }}>
-                {active && (
-                  <span style={{
-                    position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
-                    width: 28, height: 3, borderRadius: '0 0 3px 3px',
-                    background: 'linear-gradient(90deg, #5ce1e6, #d4af37)',
-                  }} />
-                )}
-                <span style={{ fontSize: '1.25rem', lineHeight: 1, filter: active ? 'drop-shadow(0 0 6px rgba(92,225,230,0.6))' : 'none', transition: 'filter 0.2s ease' }}>
-                  {item.icon}
-                </span>
+      {/* ── Scrollable content ──────────────────────────────────────── */}
+      <main style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+        <div style={{ padding: '16px', maxWidth: 1200, margin: '0 auto' }}>
+          {children}
+        </div>
+      </main>
+
+      {/* ── Bottom Tab Bar — always visible, never needs scrolling ─── */}
+      <nav style={{
+        flexShrink: 0,
+        background: 'rgba(10,18,58,0.97)',
+        backdropFilter: 'blur(20px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+        borderTop: '1px solid rgba(92,225,230,0.12)',
+        boxShadow: '0 -4px 24px rgba(0,0,0,0.3)',
+        display: 'flex',
+        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+      }}>
+        {NAV.map(item => {
+          const active = router.pathname === item.href;
+          return (
+            <Link key={item.href} href={item.href} style={{
+              flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+              justifyContent: 'center', gap: 3, padding: '10px 2px 9px',
+              textDecoration: 'none',
+              color: active ? '#5ce1e6' : 'rgba(180,200,240,0.4)',
+              transition: 'color 0.2s ease',
+              position: 'relative',
+            }}>
+              {active && (
                 <span style={{
-                  fontSize: '9.5px', fontWeight: active ? 700 : 500,
-                  letterSpacing: '0.01em',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  maxWidth: '100%', textAlign: 'center',
-                }}>
-                  {item.label}
-                </span>
-              </Link>
-            );
-          })}
+                  position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
+                  width: 28, height: 3, borderRadius: '0 0 3px 3px',
+                  background: 'linear-gradient(90deg, #5ce1e6, #d4af37)',
+                }} />
+              )}
+              <span style={{
+                lineHeight: 1,
+                filter: active ? 'drop-shadow(0 0 6px rgba(92,225,230,0.6))' : 'none',
+                transition: 'filter 0.2s ease',
+              }}>
+                {item.icon}
+              </span>
+              <span style={{
+                fontSize: '9px', fontWeight: active ? 700 : 500,
+                letterSpacing: '0.01em',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                maxWidth: '100%', textAlign: 'center',
+              }}>
+                {item.label}
+              </span>
+            </Link>
+          );
+        })}
 
-          {/* Logout tab */}
-          <button onClick={logout} style={{
-            flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-            justifyContent: 'center', gap: 3, padding: '10px 4px 8px',
-            background: 'transparent', border: 'none', cursor: 'pointer',
-            color: 'rgba(248,113,113,0.55)', position: 'relative',
-          }}>
-            <span style={{ fontSize: '1.25rem', lineHeight: 1 }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-            </span>
-            <span style={{ fontSize: '9.5px', fontWeight: 500 }}>Logout</span>
-          </button>
-        </nav>
-      </div>
-
-      <style jsx global>{`
-        @keyframes slideInLeft {
-          from { transform: translateX(-100%); }
-          to   { transform: translateX(0); }
-        }
-      `}</style>
+        {/* Logout tab */}
+        <button onClick={logout} style={{
+          flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+          justifyContent: 'center', gap: 3, padding: '10px 2px 9px',
+          background: 'transparent', border: 'none', cursor: 'pointer',
+          color: 'rgba(248,113,113,0.55)', transition: 'color 0.2s ease',
+        }}
+          onMouseEnter={e => e.currentTarget.style.color = '#f87171'}
+          onMouseLeave={e => e.currentTarget.style.color = 'rgba(248,113,113,0.55)'}
+        >
+          <span style={{ lineHeight: 1 }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          </span>
+          <span style={{ fontSize: '9px', fontWeight: 500 }}>Logout</span>
+        </button>
+      </nav>
     </div>
   );
 }
