@@ -30,6 +30,7 @@ export default function AdminLayout({ children, title }) {
       display: 'flex',
       flexDirection: 'column',
       height: '100vh',
+      minHeight: '-webkit-fill-available',
       background: '#f0f4ff',
       overflow: 'hidden',
     }}>
@@ -160,6 +161,16 @@ export default function AdminLayout({ children, title }) {
           <span style={{ fontSize: '9px', fontWeight: 500 }}>Logout</span>
         </button>
       </nav>
+
+      <style jsx global>{`
+        html, body {
+          height: 100%;
+          height: -webkit-fill-available;
+        }
+        html {
+          height: -webkit-fill-available;
+        }
+      `}</style>
     </div>
   );
 }
