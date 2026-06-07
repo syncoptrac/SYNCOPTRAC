@@ -103,34 +103,7 @@ export default function AdminLayout({ children, title }) {
   return (
     <div style={{ display: 'flex', height: '100vh', background: '#f0f4ff', overflow: 'hidden' }}>
 
-      {/* ── Desktop Sidebar (unchanged) ─────────────────────────────── */}
-      <aside className="hidden md:flex" style={{
-        width: 220, flexShrink: 0, flexDirection: 'column',
-        background: 'linear-gradient(180deg, #0a1844 0%, #11245d 100%)',
-        boxShadow: '4px 0 24px rgba(0,0,0,0.18)',
-        borderRight: '1px solid rgba(92,225,230,0.10)',
-      }}>
-        <SidebarContent {...sidebarProps} />
-      </aside>
-
-      {/* ── Mobile drawer ────────────────────────────────────────────── */}
-      {sidebarOpen && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} className="md:hidden">
-          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)' }}
-            onClick={() => setSidebarOpen(false)} />
-          <aside style={{
-            position: 'absolute', left: 0, top: 0, height: '100%', width: 260,
-            background: 'linear-gradient(180deg, #0a1844 0%, #11245d 100%)',
-            zIndex: 50, boxShadow: '8px 0 40px rgba(0,0,0,0.4)',
-            animation: 'slideInLeft 0.28s cubic-bezier(0.16,1,0.3,1)',
-          }}>
-            <button onClick={() => setSidebarOpen(false)} style={{ position: 'absolute', top: 14, right: 14, color: 'rgba(200,215,240,0.5)', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '1.25rem' }}>✕</button>
-            <SidebarContent {...sidebarProps} />
-          </aside>
-        </div>
-      )}
-
-      {/* ── Main area ───────────────────────────────────────────────── */}
+      {/* ── Main area (no sidebar — bottom tab bar on all screen sizes) ── */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
 
         {/* Top bar */}
@@ -143,32 +116,27 @@ export default function AdminLayout({ children, title }) {
           boxShadow: scrolled ? '0 2px 20px rgba(0,0,0,0.25)' : '0 2px 12px rgba(0,0,0,0.15)',
           transition: 'all 0.3s ease',
         }}>
-          {/* Mobile: logo only */}
-          <div className="md:hidden" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Logo + brand */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <img src="/logo.png" alt="SYNCOPTRAC" style={{ height: 30, width: 30, objectFit: 'cover', borderRadius: 8 }} />
             <span style={{ fontWeight: 800, fontSize: '0.9rem' }}>
               <span style={{ color: '#5ce1e6' }}>S</span><span style={{ color: '#ffffff' }}>YNCOPTRAC</span>
             </span>
           </div>
 
-          {/* Desktop: page title */}
-          {title && (
-            <div className="hidden md:flex" style={{ alignItems: 'center', gap: 8 }}>
-              <h1 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#ffffff', letterSpacing: '-0.01em' }}>{title}</h1>
-            </div>
-          )}
-
           <div style={{ flex: 1 }} />
 
-          {/* Mobile: page title right */}
+          {/* Page title */}
           {title && (
-            <span className="md:hidden" style={{ fontSize: '0.85rem', fontWeight: 700, color: 'rgba(220,235,255,0.9)' }}>
+            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'rgba(220,235,255,0.9)' }}>
               {title}
             </span>
           )}
 
-          {/* Desktop: admin badge */}
-          <div className="hidden md:flex" style={{ alignItems: 'center', gap: 8, padding: '5px 12px', background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.12)', borderRadius: 20 }}>
+          <div style={{ flex: 1 }} />
+
+          {/* Admin badge */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px', background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.12)', borderRadius: 20 }}>
             <div style={{ width: 22, height: 22, borderRadius: '50%', background: 'linear-gradient(135deg, #ef4444, #f87171)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 800, color: 'white' }}>A</div>
             <span style={{ fontSize: '12px', fontWeight: 600, color: 'rgba(220,235,255,0.85)' }}>{user?.username || 'Admin'}</span>
             <span style={{ fontSize: '10px', fontWeight: 700, color: '#ef4444', background: 'rgba(239,68,68,0.08)', padding: '1px 7px', borderRadius: 20 }}>Super Admin</span>
@@ -177,14 +145,13 @@ export default function AdminLayout({ children, title }) {
 
         {/* Scrollable content */}
         <main className="admin-main" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
-          <div style={{ padding: '16px 16px', maxWidth: 1200, paddingBottom: 'calc(80px + env(safe-area-inset-bottom, 0px))' }}
-            className="md-admin-pad">
+          <div style={{ padding: '16px', maxWidth: 1200, margin: '0 auto', paddingBottom: 'calc(80px + env(safe-area-inset-bottom, 0px))' }}>
             {children}
           </div>
         </main>
 
-        {/* ── Mobile Bottom Tab Bar ─────────────────────────────────── */}
-        <nav className="md:hidden" style={{
+        {/* ── Bottom Tab Bar (all screen sizes) ─────────────────────── */}
+        <nav style={{
           position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 30,
           background: 'rgba(10,18,58,0.97)',
           backdropFilter: 'blur(20px) saturate(180%)',
@@ -226,7 +193,7 @@ export default function AdminLayout({ children, title }) {
             );
           })}
 
-          {/* Logout as last tab on mobile */}
+          {/* Logout as last tab */}
           <button onClick={logout} style={{
             flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
             justifyContent: 'center', gap: 3, padding: '10px 4px 8px',
@@ -245,12 +212,6 @@ export default function AdminLayout({ children, title }) {
         @keyframes slideInLeft {
           from { transform: translateX(-100%); }
           to   { transform: translateX(0); }
-        }
-        @media (min-width: 768px) {
-          .md-admin-pad {
-            padding: 24px 20px !important;
-            padding-bottom: 24px !important;
-          }
         }
       `}</style>
     </div>

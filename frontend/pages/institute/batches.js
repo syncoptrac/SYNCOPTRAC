@@ -516,8 +516,9 @@ export default function BatchesPage() {
                 ))}
               </div>
 
-              {/* Weekly grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 10 }}>
+              {/* Weekly grid — horizontally scrollable on narrow screens */}
+              <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', marginBottom: 4, borderRadius: 10, paddingBottom: 4 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(130px, 1fr))', gap: 10, minWidth: 700 }}>
                 {DAYS.map(day => {
                   const daySlots = getSlotsForDay(day);
                   return (
@@ -606,6 +607,7 @@ export default function BatchesPage() {
                   );
                 })}
               </div>
+              </div>{/* end scroll wrapper */}
 
               {/* All Classes: toggle list view */}
               <div style={{ marginTop: 24 }}>
