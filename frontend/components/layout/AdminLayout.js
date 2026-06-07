@@ -201,14 +201,14 @@ export default function AdminLayout({ children, title }) {
         <header style={{
           flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12,
           padding: '0 20px', height: 58,
-          background: 'rgba(255,255,255,0.92)',
+          background: 'linear-gradient(135deg, #0a1844 0%, #11245d 100%)',
           backdropFilter: 'blur(12px)',
-          borderBottom: '1px solid rgba(0,0,0,0.06)',
-          boxShadow: '0 1px 12px rgba(0,0,0,0.05)',
+          borderBottom: '1px solid rgba(92,225,230,0.10)',
+          boxShadow: '0 2px 12px rgba(0,0,0,0.18)',
         }}>
           <button className="md:hidden" onClick={() => setSidebarOpen(true)} style={{
             padding: 6, borderRadius: 8, border: 'none', background: 'transparent',
-            cursor: 'pointer', color: '#374151',
+            cursor: 'pointer', color: 'rgba(200,215,240,0.85)',
           }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
@@ -243,7 +243,7 @@ export default function AdminLayout({ children, title }) {
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: '10px', fontWeight: 800, color: 'white',
             }}>A</div>
-            <span style={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+            <span style={{ fontSize: '12px', fontWeight: 600, color: 'rgba(220,235,255,0.85)' }}>
               {user?.username || 'Admin'}
             </span>
             <span style={{
@@ -253,7 +253,7 @@ export default function AdminLayout({ children, title }) {
           </div>
 
           {title && (
-            <span className="md:hidden" style={{ fontSize: '0.875rem', fontWeight: 600, color: '#374151', marginLeft: 'auto' }}>
+            <span className="md:hidden" style={{ fontSize: '0.875rem', fontWeight: 600, color: 'rgba(220,235,255,0.85)', marginLeft: 'auto' }}>
               {title}
             </span>
           )}

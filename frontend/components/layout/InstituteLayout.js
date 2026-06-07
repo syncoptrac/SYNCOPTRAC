@@ -227,16 +227,16 @@ export default function InstituteLayout({ children, title }) {
         <header style={{
           flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12,
           padding: '0 20px', height: 58,
-          background: scrolled ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.8)',
+          background: scrolled ? 'rgba(10,24,68,0.98)' : 'linear-gradient(135deg, #0a1844 0%, #11245d 100%)',
           backdropFilter: 'blur(12px)',
-          borderBottom: `1px solid ${scrolled ? 'rgba(0,0,0,0.07)' : 'rgba(0,0,0,0.05)'}`,
-          boxShadow: scrolled ? '0 2px 16px rgba(0,0,0,0.07)' : 'none',
+          borderBottom: `1px solid ${scrolled ? 'rgba(92,225,230,0.15)' : 'rgba(92,225,230,0.10)'}`,
+          boxShadow: scrolled ? '0 2px 20px rgba(0,0,0,0.25)' : '0 2px 12px rgba(0,0,0,0.15)',
           transition: 'all 0.3s ease',
         }}>
           {/* Mobile burger */}
           <button className="md:hidden" onClick={() => setSidebarOpen(true)} style={{
             padding: '6px', borderRadius: 8, border: 'none', background: 'transparent',
-            cursor: 'pointer', color: '#374151', flexShrink: 0,
+            cursor: 'pointer', color: 'rgba(200,215,240,0.85)', flexShrink: 0,
           }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
@@ -276,7 +276,7 @@ export default function InstituteLayout({ children, title }) {
             }}>
               {(user?.instituteName || 'I')[0].toUpperCase()}
             </div>
-            <span style={{ fontSize: '12px', fontWeight: 600, color: '#374151', maxWidth: 140,
+            <span style={{ fontSize: '12px', fontWeight: 600, color: 'rgba(220,235,255,0.85)', maxWidth: 140,
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {user?.instituteName || 'Institute'}
             </span>
@@ -284,7 +284,7 @@ export default function InstituteLayout({ children, title }) {
 
           {/* Mobile page title */}
           {title && (
-            <span className="md:hidden" style={{ fontSize: '0.875rem', fontWeight: 600, color: '#374151', marginLeft: 'auto' }}>
+            <span className="md:hidden" style={{ fontSize: '0.875rem', fontWeight: 600, color: 'rgba(220,235,255,0.85)', marginLeft: 'auto' }}>
               {title}
             </span>
           )}
