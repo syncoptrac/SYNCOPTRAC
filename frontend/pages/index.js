@@ -85,12 +85,12 @@ export default function HomePage() {
             <div
               className="inline-block text-xs font-bold px-3.5 py-1.5 rounded-full mb-5 uppercase tracking-widest"
               style={{
-                background: 'rgba(17,36,93,0.07)',
-                color: '#11245d',
-                border: '1px solid rgba(17,36,93,0.18)',
+                background: 'linear-gradient(135deg, #0a1844 0%, #11245d 100%)',
+                border: '1px solid rgba(92,225,230,0.25)',
+                boxShadow: '0 0 16px rgba(92,225,230,0.12)',
               }}
             >
-              Why SYNCOPTRAC
+              <span style={{ color: '#5ce1e6' }}>S</span><span style={{ color: '#ffffff' }}>YNC</span><span style={{ color: '#5ce1e6' }}>O</span><span style={{ color: '#ffffff' }}>PTRAC</span>
             </div>
             <h2 className="text-3xl md:text-4xl font-extrabold text-gray-900 mb-4" style={{ letterSpacing: '-0.02em' }}>
               Built Around One Simple Idea

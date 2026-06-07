@@ -49,8 +49,14 @@ export default function FeesPage() {
         api.get('/api/sheets/fees'),
         api.get('/api/sheets/students')
       ]);
-      setFees(feesRes.data.data || []);
-      setStudents(studentsRes.data.data || []);
+      const activeStudents = studentsRes.data.data || [];
+      const activeStudentIds = new Set(activeStudents.map(s => String(s.StudentID)));
+      // Filter out fee rows for students that have been deleted
+      const activeFees = (feesRes.data.data || []).filter(f =>
+        activeStudentIds.has(String(f.StudentID))
+      );
+      setFees(activeFees);
+      setStudents(activeStudents);
     } catch { toast.error('Failed to load fees'); }
     finally { setLoading(false); }
   };

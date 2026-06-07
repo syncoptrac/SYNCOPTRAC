@@ -49,11 +49,18 @@ export const getUser = () => {
 };
 
 export const setAuth = (token, user) => {
-  Cookies.set('token', token, { expires: 7 });
-  Cookies.set('user', JSON.stringify(user), { expires: 7 });
+  const opts = {
+    expires: 7,
+    path: '/',
+    secure: true,
+    sameSite: 'Strict',
+  };
+  Cookies.set('token', token, opts);
+  Cookies.set('user', JSON.stringify(user), opts);
 };
 
 export const clearAuth = () => {
-  Cookies.remove('token');
-  Cookies.remove('user');
+  const opts = { path: '/', secure: true, sameSite: 'Strict' };
+  Cookies.remove('token', opts);
+  Cookies.remove('user', opts);
 };

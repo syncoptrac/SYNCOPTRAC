@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/router';
-import api, { setAuth, getUser } from '../../lib/api';
+import api, { setAuth, clearAuth } from '../../lib/api';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
 
@@ -9,14 +9,9 @@ export default function InstituteLogin() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  // If already logged in, redirect to the right dashboard instead of
-  // trapping the user on the login page with no way back to home.
-  useEffect(() => {
-    const user = getUser();
-    if (!user) return;
-    if (user.role === 'institute') router.replace('/institute/dashboard');
-    else if (user.role === 'admin') router.replace('/admin/dashboard');
-  }, []);
+  // Always clear any existing session when the login page is opened
+  // so the user must type credentials every time
+  useState(() => { clearAuth(); });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
