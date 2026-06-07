@@ -46,8 +46,7 @@ function SidebarContent({ user, pathname, onClose, onLogout }) {
           </div>
           <div>
             <p style={{ fontWeight: 800, fontSize: '0.9rem', lineHeight: 1, letterSpacing: '-0.01em' }}>
-              <span style={{ color: '#5ce1e6' }}>SYNCOP</span>
-              <span style={{ color: '#ffffff' }}>TRAC</span>
+              <span style={{ color: '#5ce1e6' }}>S</span><span style={{ color: '#ffffff' }}>YNCOPTRAC</span>
             </p>
             <p style={{ fontSize: '11px', marginTop: 3, color: 'rgba(160,180,165,0.55)',
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>
@@ -248,14 +247,14 @@ export default function InstituteLayout({ children, title }) {
           <div className="md:hidden" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <img src="/logo.png" alt="SYNCOPTRAC" style={{ height: 28, width: 28, objectFit: 'cover', borderRadius: 7 }} />
             <span style={{ fontWeight: 800, fontSize: '0.875rem' }}>
-              <span style={{ color: '#5ce1e6' }}>SYNCOP</span><span style={{ color: '#ffffff' }}>TRAC</span>
+              <span style={{ color: '#5ce1e6' }}>S</span><span style={{ color: '#ffffff' }}>YNCOPTRAC</span>
             </span>
           </div>
 
           {/* Page title — desktop */}
           {title && (
             <div className="hidden md:flex" style={{ alignItems: 'center', gap: 8 }}>
-              <h1 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#111827', letterSpacing: '-0.01em' }}>{title}</h1>
+              <h1 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#ffffff', letterSpacing: '-0.01em' }}>{title}</h1>
             </div>
           )}
 

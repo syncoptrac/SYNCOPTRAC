@@ -129,7 +129,7 @@ export default function EnquiriesPage() {
         {[
           { label: 'New',        status: 'New',        color: 'bg-blue-50 text-blue-700 border-blue-100' },
           { label: 'Follow-Up',  status: 'Follow-Up',  color: 'bg-yellow-50 text-yellow-700 border-yellow-100' },
-          { label: 'Converted',  status: 'Converted',  color: 'bg-green-50 text-green-700 border-green-100' },
+          { label: 'Converted',  status: 'Converted',  color: 'bg-blue-50 text-blue-700 border-blue-100' },
           { label: 'Lost',       status: 'Lost',        color: 'bg-red-50 text-red-700 border-red-100' },
         ].map(s => (
           <div key={s.label} className={`card border text-center py-4 ${s.color}`}>

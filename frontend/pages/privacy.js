@@ -33,6 +33,7 @@ const sections = [
     content: [
       'Institutes retain ownership of the information they enter into the system.',
       'Access to institute data is restricted to authorised users of the respective institute and to SYNCOPTRAC personnel when reasonably required for setup, support, maintenance, troubleshooting, or operation of the service.',
+      'Institutes are responsible for ensuring that they have obtained any required permissions, authorisations, or consent from students, parents, staff, or other individuals whose information is entered into the system.',
     ],
   },
   {
@@ -47,7 +48,7 @@ const sections = [
     title: 'Third-Party Services',
     icon: '🔗',
     content: [
-      'SYNCOPTRAC relies on third-party services, including Google Sheets and Gmail, to provide certain features of the platform.',
+      'SYNCOPTRAC relies on third-party services, including Google Sheets, Google Apps Script, and Gmail, to provide certain features of the platform.',
       'Use of these services is subject to the applicable terms, policies, and practices of the respective providers.',
     ],
   },
@@ -60,11 +61,34 @@ const sections = [
     ],
   },
   {
+    title: 'Security & Service Availability',
+    icon: '🛡️',
+    content: [
+      'SYNCOPTRAC uses reasonable administrative and technical measures to help protect information handled through the platform.',
+      'However, no electronic system, internet transmission, or third-party service can be guaranteed to be completely secure, uninterrupted, or error-free.',
+      'While reasonable efforts are made to maintain service availability and data integrity, SYNCOPTRAC does not guarantee uninterrupted operation or prevention of data loss.',
+    ],
+  },
+  {
+    title: 'Limitation of Liability',
+    icon: '⚖️',
+    content: [
+      'To the maximum extent permitted by applicable law, SYNCOPTRAC shall not be liable for any indirect, incidental, consequential, special, or business losses arising from the use of the service, including loss of data, loss of revenue, interruption of operations, or reliance on information stored within the platform.',
+    ],
+  },
+  {
     title: 'Changes to This Policy',
     icon: '📝',
     content: [
       'This Privacy & Data Handling statement may be updated from time to time to reflect changes in the service, operational requirements, or legal obligations.',
       'The version published on this page represents the current policy.',
+    ],
+  },
+  {
+    title: 'Governing Law',
+    icon: '🌍',
+    content: [
+      'This Privacy & Data Handling statement shall be governed by and interpreted in accordance with the laws of India.',
     ],
   },
   {
@@ -191,9 +215,9 @@ export default function PrivacyPage() {
                 Questions about this policy?{' '}
                 <a
                   href="mailto:syncoptrac@gmail.com"
-                  style={{ color: '#5ce1e6', fontWeight: 600, textDecoration: 'none' }}
-                  onMouseEnter={e => e.currentTarget.style.color = '#ffffff'}
-                  onMouseLeave={e => e.currentTarget.style.color = '#5ce1e6'}
+                  style={{ color: '#111827', fontWeight: 600, textDecoration: 'none' }}
+                  onMouseEnter={e => e.currentTarget.style.color = '#374151'}
+                  onMouseLeave={e => e.currentTarget.style.color = '#111827'}
                 >
                   syncoptrac@gmail.com
                 </a>

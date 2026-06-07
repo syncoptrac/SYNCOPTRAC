@@ -49,6 +49,7 @@ export default function BatchesPage() {
 
   // Schedule slot modal
   const [showSlotModal, setShowSlotModal] = useState(false);
+  const [showListView, setShowListView] = useState(false);
   const [editSlotId, setEditSlotId] = useState(null);
   const [slotForm, setSlotForm] = useState(EMPTY_SLOT);
 
@@ -606,11 +607,28 @@ export default function BatchesPage() {
                 })}
               </div>
 
-              {/* Mobile: list view */}
+              {/* All Classes: toggle list view */}
               <div style={{ marginTop: 24 }}>
-                <h3 style={{ fontWeight: 700, color: '#111827', marginBottom: 12, fontSize: '0.9rem' }}>
-                  📋 All Classes (List View)
-                </h3>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <h3 style={{ fontWeight: 700, color: '#111827', fontSize: '0.9rem', margin: 0 }}>
+                    📋 All Classes
+                  </h3>
+                  <button
+                    onClick={() => setShowListView(v => !v)}
+                    style={{
+                      fontSize: '12px', fontWeight: 600,
+                      padding: '6px 14px', borderRadius: 20,
+                      border: '1px solid rgba(17,36,93,0.2)',
+                      background: showListView ? 'linear-gradient(135deg,#11245d,#1a3a7a)' : 'white',
+                      color: showListView ? 'white' : '#11245d',
+                      cursor: 'pointer',
+                      transition: 'all 0.25s ease',
+                    }}
+                  >
+                    {showListView ? 'Hide List' : 'View All Classes'}
+                  </button>
+                </div>
+                {showListView && (
                 <div style={{
                   background: 'white', borderRadius: 14, border: '1px solid #e5e7eb',
                   overflow: 'hidden',
@@ -664,6 +682,7 @@ export default function BatchesPage() {
                     </table>
                   )}
                 </div>
+                )}
               </div>
             </>
           )}

@@ -30,7 +30,7 @@ export default function AdminLogin() {
         <div className="text-center mb-8">
           <img src="/logo.png" alt="SYNCOPTRAC" className="h-20 w-20 object-cover rounded-2xl mx-auto mb-4 shadow-lg" />
           <h1 className="text-2xl font-bold">
-            <span style={{color:"#5ce1e6"}}>SYNCOP</span>
+            <span style={{color:"#5ce1e6"}}>S</span><span style={{color:"#ffffff"}}>YNCOP</span>
             <span style={{color:"#ffffff"}}>TRAC</span>
           </h1>
           <p className="text-gray-400 text-sm mt-1">Admin Portal</p>

@@ -76,14 +76,14 @@ export default function ContactPage() {
                   href="mailto:syncoptrac@gmail.com"
                   style={{
                     display: 'block',
-                    color: '#5ce1e6',
+                    color: '#111827',
                     fontWeight: 600,
                     fontSize: '0.95rem',
                     textDecoration: 'none',
                     transition: 'color 0.2s ease',
                   }}
-                  onMouseEnter={e => e.currentTarget.style.color = '#ffffff'}
-                  onMouseLeave={e => e.currentTarget.style.color = '#5ce1e6'}
+                  onMouseEnter={e => e.currentTarget.style.color = '#374151'}
+                  onMouseLeave={e => e.currentTarget.style.color = '#111827'}
                 >
                   syncoptrac@gmail.com
                 </a>
@@ -116,7 +116,7 @@ export default function ContactPage() {
                 <div style={{ fontSize: '2rem', marginBottom: '16px' }}>📞</div>
                 <h3 style={{ fontWeight: 700, color: '#111827', fontSize: '1rem', marginBottom: '8px' }}>Call Requests</h3>
                 <p style={{ fontSize: '0.875rem', color: '#4b5563', lineHeight: 1.65, marginBottom: '10px' }}>
-                  To request a call, email us your phone number and a suitable time. We will call you back.
+                  To request a call, email us your phone number. We will review your request and contact you to arrange a suitable time for a call.
                 </p>
                 <div style={{
                   display: 'inline-flex', alignItems: 'center', gap: '8px',
@@ -124,7 +124,7 @@ export default function ContactPage() {
                   padding: '8px 12px',
                 }}>
                   <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#1a73e8' }}>
-                    Monday – Saturday &nbsp;·&nbsp; 5:00 PM – 9:00 PM
+                    Calling Hours: Monday – Saturday &nbsp;·&nbsp; 5:00 PM – 9:00 PM
                   </span>
                 </div>
               </div>

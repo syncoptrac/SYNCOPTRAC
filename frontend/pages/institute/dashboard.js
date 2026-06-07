@@ -181,13 +181,17 @@ export default function InstituteDashboard() {
             {/* Quick Actions */}
             <SectionCard title="⚡ Quick Actions">
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                {quickActions.map(a => (
+                {quickActions.map((a, idx) => (
                   <button key={a.label} onClick={() => router.push(a.href)} style={{
                     display: 'flex', alignItems: 'center', gap: 10,
                     padding: '13px 14px', borderRadius: 12, cursor: 'pointer',
                     background: a.bg, border: `1px solid ${a.color}20`,
                     transition: 'all 0.25s cubic-bezier(0.16,1,0.3,1)',
                     textAlign: 'left', fontSize: '0.8rem', fontWeight: 600, color: a.color,
+                    gridColumn: (quickActions.length % 2 !== 0 && idx === quickActions.length - 1) ? '1 / -1' : 'auto',
+                    justifyContent: (quickActions.length % 2 !== 0 && idx === quickActions.length - 1) ? 'center' : 'flex-start',
+                    maxWidth: (quickActions.length % 2 !== 0 && idx === quickActions.length - 1) ? '50%' : '100%',
+                    margin: (quickActions.length % 2 !== 0 && idx === quickActions.length - 1) ? '0 auto' : '0',
                   }}
                     onMouseEnter={e => {
                       e.currentTarget.style.transform = 'translateY(-2px) scale(1.02)';

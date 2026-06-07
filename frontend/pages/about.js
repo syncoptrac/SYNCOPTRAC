@@ -188,7 +188,7 @@ export default function AboutPage() {
               padding: '4px 12px',
               marginBottom: '24px',
             }}>
-              About SYNCOPTRAC
+              About <span style={{color:"#5ce1e6"}}>S</span>YNCOPTRAC
             </div>
 
             {/* Heading */}
@@ -212,9 +212,9 @@ export default function AboutPage() {
               maxWidth: '520px',
               margin: 0,
             }}>
-              Most institutes don't struggle with teaching.
+              <strong style={{fontWeight:800,color:'rgba(220,235,255,0.92)'}}>Most institutes don't struggle with teaching.</strong>
               <br />
-              They struggle with everything around teaching.
+              <strong style={{fontWeight:800,color:'rgba(220,235,255,0.92)'}}>They struggle with everything around teaching.</strong>
             </p>
           </FadeUp>
         </section>

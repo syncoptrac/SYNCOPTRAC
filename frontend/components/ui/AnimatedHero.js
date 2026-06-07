@@ -98,16 +98,11 @@ function CinematicCanvas() {
           }
         }
 
-        // Draw hexagons — center dot is turquoise, upper dots are gold-yellow, rest white
+        // Draw hexagons — all turquoise
         positions.forEach((pos, i) => {
           drawHex(pos.x, pos.y, pos.r, cl.rotation + i * 0.08);
-          // i===0 is anchor/center: turquoise; i===1,2 are upper: gold-yellow; i===3 bottom: white
-          let strokeColor;
-          if (i === 0) strokeColor = 'rgba(92,225,230,0.75)';
-          else if (i === 1 || i === 2) strokeColor = 'rgba(212,175,55,0.65)';
-          else strokeColor = 'rgba(255,255,255,0.55)';
-          ctx.strokeStyle = strokeColor;
-          ctx.lineWidth = i === 0 ? 1.4 : 1.1;
+          ctx.strokeStyle = 'rgba(92,225,230,0.75)';
+          ctx.lineWidth = i === 0 ? 1.6 : 1.2;
           ctx.stroke();
         });
       });
@@ -243,12 +238,12 @@ export default function AnimatedHero() {
         <CinematicText delay={460} className="mb-12">
           <p
             className="text-lg md:text-xl max-w-2xl mx-auto leading-relaxed"
-            style={{ color: 'rgba(200,215,255,0.75)' }}
+            style={{ color: 'rgba(200,215,255,0.9)', fontWeight: 600 }}
           >
             Manage students, attendance, fees, and enquiries in one structured system —
             designed to reduce scattered records and manual tracking.
             <br />
-            <span style={{ color: 'rgba(200,215,255,0.55)', fontSize: '0.95em' }}>
+            <span style={{ color: 'rgba(200,215,255,0.75)', fontSize: '0.95em', fontWeight: 600 }}>
               A simple way to keep your daily operations organized and easier to manage.
             </span>
           </p>

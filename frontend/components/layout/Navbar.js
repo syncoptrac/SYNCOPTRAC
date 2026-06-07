@@ -58,11 +58,10 @@ export default function Navbar() {
               </div>
               <div>
                 <span className="font-bold text-[17px] leading-none tracking-wide">
-                  <span style={{ color: '#5ce1e6' }}>SYNCOP</span>
-                  <span style={{ color: '#ffffff' }}>TRAC</span>
+                  <span style={{ color: '#5ce1e6' }}>S</span><span style={{ color: '#ffffff' }}>YNCOPTRAC</span>
                 </span>
                 <p className="text-[11px] leading-none mt-0.5 hidden sm:block" style={{ color: 'rgba(200,220,255,0.45)', letterSpacing: '0.02em' }}>
-                  Where communication gets organised
+                  WHERE COMMUNICATION GETS ORGANISED AND NOTHING IS MISSED.
                 </p>
               </div>
             </Link>

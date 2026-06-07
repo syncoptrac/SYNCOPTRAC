@@ -35,11 +35,10 @@ export default function Footer() {
                 />
                 <div>
                   <p className="font-bold text-base leading-none">
-                    <span style={{ color: '#5ce1e6' }}>SYNCOP</span>
-                    <span style={{ color: '#ffffff' }}>TRAC</span>
+                    <span style={{ color: '#5ce1e6' }}>S</span><span style={{ color: '#ffffff' }}>YNCOPTRAC</span>
                   </p>
                   <p className="text-xs mt-0.5 italic" style={{ color: 'rgba(180,200,240,0.35)' }}>
-                    Where communication gets organised and nothing is missed
+                    WHERE COMMUNICATION GETS ORGANISED AND NOTHING IS MISSED.
                   </p>
                 </div>
               </div>
