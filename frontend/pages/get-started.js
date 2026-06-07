@@ -380,6 +380,14 @@ export default function GetStartedPage() {
                   <p style={{ textAlign: 'center', marginTop: '14px', fontSize: '0.8rem', color: '#9ca3af' }}>
                     We review every request and respond within 24 hours.
                   </p>
+
+                  <p style={{
+                    textAlign: 'center', marginTop: '16px', fontSize: '0.75rem',
+                    color: '#b0b8c8', lineHeight: 1.6,
+                    borderTop: '1px solid rgba(0,0,0,0.06)', paddingTop: '16px',
+                  }}>
+                    By submitting this form, you agree that <strong style={{ color: '#9ca3af' }}>SYNCOPTRAC</strong> may use the information provided to contact you, set up your account, and provide related services.
+                  </p>
                 </form>
               </div>
             </FadeUp>
