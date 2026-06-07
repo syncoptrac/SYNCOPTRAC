@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { body, validationResult } = require('express-validator');
 const Admin = require('../models/Admin');
 const Institute = require('../models/Institute');
@@ -70,6 +71,11 @@ router.post('/institute/login', [
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    // Generate a new session ID — invalidates any existing session on another device
+    const sessionId = crypto.randomUUID();
+    institute.currentSessionId = sessionId;
+    await institute.save();
+
     const token = jwt.sign(
       {
         id: institute._id,
@@ -77,7 +83,8 @@ router.post('/institute/login', [
         instituteName: institute.instituteName,
         googleSheetId: institute.googleSheetId,
         appsScriptUrl: institute.appsScriptUrl,
-        role: 'institute'
+        role: 'institute',
+        sessionId,
       },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }

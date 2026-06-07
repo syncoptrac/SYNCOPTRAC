@@ -18,15 +18,28 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle 401 - ONLY redirect if it's the auth/verify endpoint
+// Handle 401 - redirect to login, with special handling for session displacement
 api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
+      const data = err.response?.data;
       const url = err.config?.url || '';
+
+      // Session displaced — someone logged in on another device
+      if (data?.error === 'SESSION_DISPLACED') {
+        Cookies.remove('token', { path: '/' });
+        Cookies.remove('user', { path: '/' });
+        if (typeof window !== 'undefined') {
+          window.location.href = '/institute/login?reason=displaced';
+        }
+        return Promise.reject(err);
+      }
+
+      // Normal 401 — only redirect on verify endpoint
       if (url.includes('/api/auth/verify')) {
-        Cookies.remove('token');
-        Cookies.remove('user');
+        Cookies.remove('token', { path: '/' });
+        Cookies.remove('user', { path: '/' });
         if (typeof window !== 'undefined') {
           const path = window.location.pathname;
           if (path.startsWith('/admin')) window.location.href = '/admin/login';

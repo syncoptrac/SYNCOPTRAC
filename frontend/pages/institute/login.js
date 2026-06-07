@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
-import api, { setAuth, clearAuth } from '../../lib/api';
+import api, { setAuth } from '../../lib/api';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
 
@@ -9,9 +9,7 @@ export default function InstituteLogin() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  // Always clear any existing session when the login page is opened
-  // so the user must type credentials every time
-  useState(() => { clearAuth(); });
+  const displaced = router.query.reason === 'displaced';
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -44,6 +42,26 @@ export default function InstituteLogin() {
           <p className="text-gray-600 text-xs italic mt-1">Where communication gets organised</p>
         </div>
 
+        {/* Session displaced warning */}
+        {displaced && (
+          <div style={{
+            marginBottom: 16, padding: '14px 16px', borderRadius: 12,
+            background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.3)',
+            display: 'flex', alignItems: 'flex-start', gap: 10,
+          }}>
+            <span style={{ fontSize: '1.2rem', flexShrink: 0 }}>⚠️</span>
+            <div>
+              <p style={{ color: '#fca5a5', fontWeight: 700, fontSize: '0.875rem', marginBottom: 2 }}>
+                Session Ended
+              </p>
+              <p style={{ color: 'rgba(252,165,165,0.8)', fontSize: '0.8rem', lineHeight: 1.5 }}>
+                Someone else logged into this account on another device. Please log in again to continue.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Login card */}
         <div className="bg-brand-dark-light border border-gray-800 rounded-2xl shadow-xl p-6">
           {/* autoComplete="off" + name attributes different from admin form
               + readOnly trick on password ensures browser never autofills

@@ -35,6 +35,10 @@ const instituteSchema = new mongoose.Schema({
   // Metadata
   totalStudents: { type: Number, default: 0 },
   
+  // Single-session enforcement
+  // Updated every login — old tokens with a different sessionId are rejected
+  currentSessionId: { type: String, default: null },
+
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });
