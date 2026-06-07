@@ -127,4 +127,41 @@ router.get('/verify', async (req, res) => {
   }
 });
 
+// Lightweight session check used by polling — verifies sessionId is still current
+router.get('/verify-session', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
+  try {
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Only institute sessions need single-session enforcement
+    if (decoded.role !== 'institute') {
+      return res.json({ valid: true });
+    }
+
+    // No sessionId in token = old token, force re-login
+    if (!decoded.sessionId) {
+      return res.status(401).json({ error: 'SESSION_DISPLACED', message: 'Please log in again.' });
+    }
+
+    const institute = await Institute.findById(decoded.id).select('currentSessionId isActive');
+    if (!institute || !institute.isActive) {
+      return res.status(401).json({ error: 'SESSION_DISPLACED', message: 'Account not found.' });
+    }
+    if (institute.currentSessionId !== decoded.sessionId) {
+      return res.status(401).json({
+        error: 'SESSION_DISPLACED',
+        message: 'Your session was ended because someone logged into this account on another device.',
+      });
+    }
+
+    res.json({ valid: true });
+  } catch {
+    res.status(401).json({ error: 'SESSION_DISPLACED', message: 'Session invalid.' });
+  }
+});
+
 module.exports = router;

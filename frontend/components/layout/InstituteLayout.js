@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { clearAuth, getUser } from '../../lib/api';
+import api from '../../lib/api';
 
 const NAV = [
   { href: '/institute/dashboard', label: 'Home', icon: (
@@ -27,12 +28,31 @@ const NAV = [
 export default function InstituteLayout({ children, title }) {
   const router = useRouter();
   const user = getUser();
+  const pollRef = useRef(null);
 
   const logout = () => {
     clearAuth();
     try { sessionStorage.clear(); } catch {}
     window.location.href = '/institute/login';
   };
+
+  // Poll session validity every 5 seconds — kicks out instantly when someone else logs in
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        await api.get('/api/auth/verify-session');
+      } catch (err) {
+        // SESSION_DISPLACED is handled by the axios interceptor in api.js
+        // which redirects to /institute/login?reason=displaced automatically
+      }
+    };
+
+    // Check immediately on mount, then every 5 seconds
+    checkSession();
+    pollRef.current = setInterval(checkSession, 5000);
+
+    return () => clearInterval(pollRef.current);
+  }, []);
 
   return (
     <div style={{

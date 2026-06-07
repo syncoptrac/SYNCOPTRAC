@@ -31,7 +31,10 @@ api.interceptors.response.use(
         Cookies.remove('token', { path: '/' });
         Cookies.remove('user', { path: '/' });
         if (typeof window !== 'undefined') {
-          window.location.href = '/institute/login?reason=displaced';
+          // Avoid redirect loop if already on login page
+          if (!window.location.pathname.includes('/login')) {
+            window.location.href = '/institute/login?reason=displaced';
+          }
         }
         return Promise.reject(err);
       }
