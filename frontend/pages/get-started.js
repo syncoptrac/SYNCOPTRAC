@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Navbar from '../components/layout/Navbar';
 import Footer from '../components/layout/Footer';
 import { FadeUp } from '../components/ui/ScrollReveal';
@@ -57,6 +57,12 @@ export default function GetStartedPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Wake up Render free-tier backend as soon as page loads
+  useEffect(() => {
+    const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+    fetch(`${backendUrl}/health`, { method: 'GET' }).catch(() => {});
+  }, []);
+
   const handleChange = e => setForm(p => ({ ...p, [e.target.name]: e.target.value }));
 
   const getFieldStyle = (name) => ({
@@ -72,16 +78,24 @@ export default function GetStartedPage() {
     setError('');
     try {
       const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
       const res = await fetch(`${backendUrl}/api/leads`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Submission failed');
       setSubmitted(true);
     } catch (err) {
-      setError('Something went wrong. Please try emailing us directly at syncoptrac@gmail.com');
+      if (err.name === 'AbortError') {
+        setError('Request timed out. Please check your connection or email us at syncoptrac@gmail.com');
+      } else {
+        setError('Something went wrong. Please try emailing us directly at syncoptrac@gmail.com');
+      }
     } finally {
       setLoading(false);
     }
