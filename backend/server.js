@@ -60,13 +60,15 @@ const globalLimiter = rateLimit({
 });
 app.use(globalLimiter);
 
-// ─── Stricter limiter for auth endpoints (login only) ─────────────────────────
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20, // max 20 login attempts per 15 min
+// ─── Rate limiter for institute login only (admin has no IP-level limiter) ────
+// auth.js already handles per-loginId tracking (5 attempts → 2 min lockout).
+// This is a secondary IP-level net: 30 attempts per 2 min before IP is blocked.
+const instituteLimiter = rateLimit({
+  windowMs: 2 * 60 * 1000,
+  max: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many login attempts, please try again in 15 minutes.' },
+  message: { error: 'TOO_MANY_ATTEMPTS', message: 'Too many login attempts. Please wait 2 minutes before trying again.', retryAfterSeconds: 120 },
 });
 
 // ─── Generous limiter for session polling (every 4s per user) ─────────────────
@@ -88,9 +90,13 @@ const leadLimiter = rateLimit({
 });
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
-// verify-session MUST be mounted before authLimiter — it's a frequent poll, not a login
+// Order matters — more specific paths first.
+// verify-session: frequent poll, generous limiter, no auth limiter
 app.use('/api/auth/verify-session', sessionPollLimiter, authRoutes);
-app.use('/api/auth', authLimiter, authRoutes);
+// Institute login: rate limited (2 min window)
+app.use('/api/auth/institute/login', instituteLimiter, authRoutes);
+// All other auth routes (admin/login, verify): no rate limiter
+app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/institute', instituteRoutes);
 app.use('/api/sheets', sheetsRoutes);
