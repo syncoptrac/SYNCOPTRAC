@@ -138,13 +138,13 @@ export default function AdminDashboard() {
           display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.85rem', color: '#92400e',
         }}>
           <span style={{ fontSize: '1rem' }}>⚠️</span>
-          Database is offline. Some data may not be available. Core admin functions still work.
+          Database is offline. Some data may not be available.
         </div>
       )}
 
-      {/* Stat Cards */}
+      {/* Stat Cards — mobile: 1 col, tablet: 2 col, desktop: auto */}
       {loading ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 14, marginBottom: 20 }}>
+        <div className="stats-grid" style={{ marginBottom: 20 }}>
           {[1,2,3,4,5,6].map(i => (
             <div key={i} style={{
               height: 100, borderRadius: 16, background: 'white',
@@ -155,29 +155,28 @@ export default function AdminDashboard() {
           ))}
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 14, marginBottom: 20 }}>
-          <StatCard label="Active Institutes"          value={stats?.activeInstitutes ?? '—'}           icon="🏢" color="gold" />
-          <StatCard label="Total Institutes"           value={stats?.totalInstitutes ?? '—'}            icon="🏫" color="blue" />
-          <StatCard label="New Requests"               value={stats?.newLeads ?? '—'}                   icon="📝" color="blue" />
+        <div className="stats-grid" style={{ marginBottom: 20 }}>
+          <StatCard label="Active Institutes"         value={stats?.activeInstitutes ?? '—'}    icon="🏢" color="gold" />
+          <StatCard label="Total Institutes"          value={stats?.totalInstitutes ?? '—'}     icon="🏫" color="blue" />
+          <StatCard label="New Requests"              value={stats?.newLeads ?? '—'}            icon="📝" color="blue" />
 
-          {/* Monthly Revenue with month selector */}
-          <div style={{
+          {/* Monthly Revenue with month selector — full width on mobile */}
+          <div className="revenue-card" style={{
             background: 'white', borderRadius: 16,
             border: '1px solid rgba(92,225,230,0.18)',
             boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
             padding: '16px 18px',
-            gridColumn: 'span 2',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <p style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.07em', color: '#6b7280', textTransform: 'uppercase' }}>
+              <p style={{ fontSize: '0.72rem', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                 💰 Monthly Revenue
               </p>
-              <div style={{ position: 'relative' }} data-month-picker="true">
+              <div style={{ position: 'relative' }} data-month-picker>
                 <button
                   onClick={() => setShowMonthPicker(p => !p)}
                   style={{
-                    fontSize: '0.75rem', fontWeight: 600, color: '#92680a',
-                    background: 'rgba(92,225,230,0.07)', border: '1px solid rgba(92,225,230,0.2)',
+                    fontSize: '0.78rem', fontWeight: 600, color: '#92680a',
+                    background: 'rgba(212,175,55,0.08)', border: '1px solid rgba(212,175,55,0.2)',
                     borderRadius: 8, padding: '4px 10px', cursor: 'pointer', outline: 'none',
                     display: 'flex', alignItems: 'center', gap: 5,
                   }}
@@ -191,7 +190,6 @@ export default function AdminDashboard() {
                     boxShadow: '0 8px 32px rgba(0,0,0,0.14)', border: '1px solid rgba(0,0,0,0.08)',
                     width: 220,
                   }}>
-                    {/* Year navigation */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                       <button onClick={() => setPickerYear(y => y - 1)} style={{
                         background: 'none', border: 'none', cursor: 'pointer',
@@ -203,7 +201,6 @@ export default function AdminDashboard() {
                         fontSize: '1rem', color: '#6b7280', padding: '2px 6px', borderRadius: 6,
                       }}>›</button>
                     </div>
-                    {/* Month grid */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 5 }}>
                       {MONTHS.map((m, i) => {
                         const val = `${pickerYear}-${String(i + 1).padStart(2, '0')}`;
@@ -238,18 +235,54 @@ export default function AdminDashboard() {
             )}
           </div>
 
-          <StatCard label="This Month's Overdue"       value={`₹${fmt(stats?.overduePayments)}`}        icon="🔴" color="red" />
-          <StatCard label="Total Lifetime Revenue"     value={`₹${fmt(stats?.totalRevenue)}`}           icon="📈" color="green" />
-          <StatCard label="New Institutes This Month"  value={stats?.newInstitutesThisMonth ?? '—'}     icon="🚀" color="green" />
+          <StatCard label="This Month's Overdue"      value={`₹${fmt(stats?.overduePayments)}`} icon="🔴" color="red" />
+          <StatCard label="Total Lifetime Revenue"    value={`₹${fmt(stats?.totalRevenue)}`}    icon="📈" color="green" />
+          <StatCard label="New Institutes This Month" value={stats?.newInstitutesThisMonth ?? '—'} icon="🚀" color="green" />
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
+      {/* Bottom section — stacks on mobile */}
+      <div className="bottom-grid">
 
         {/* Recent institutes table */}
-        <div style={{ gridColumn: 'span 2' }} className="min-w-0">
+        <div className="table-col">
           <SectionCard title="Recent Institutes" action={() => router.push('/admin/institutes')} actionLabel="View all →">
-            <div style={{ overflowX: 'auto' }}>
+            {/* Mobile card list */}
+            <div className="mobile-inst-list">
+              {institutes.map((inst) => {
+                const s = STATUS_STYLE[inst.paymentStatus] || STATUS_STYLE.pending;
+                return (
+                  <div key={inst._id} style={{
+                    padding: '12px 0', borderBottom: '1px solid rgba(0,0,0,0.05)',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+                  }}>
+                    <div style={{ minWidth: 0 }}>
+                      <p style={{ fontWeight: 600, color: '#111827', fontSize: '0.85rem',
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {inst.instituteName}
+                      </p>
+                      <p style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: 2 }}>
+                        {inst.ownerName} · ₹{inst.planAmount?.toLocaleString('en-IN')}
+                      </p>
+                    </div>
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', flexShrink: 0,
+                      padding: '3px 10px', borderRadius: 20,
+                      fontSize: '0.7rem', fontWeight: 700,
+                      background: s.bg, color: s.text,
+                    }}>{s.label}</span>
+                  </div>
+                );
+              })}
+              {institutes.length === 0 && (
+                <p style={{ textAlign: 'center', color: '#9ca3af', fontSize: '0.875rem', padding: '24px 0' }}>
+                  {dbOffline ? 'Database offline' : 'No institutes yet'}
+                </p>
+              )}
+            </div>
+
+            {/* Desktop table */}
+            <div className="desktop-inst-table" style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', fontSize: '0.85rem', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
@@ -274,22 +307,16 @@ export default function AdminDashboard() {
                         onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.015)'}
                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                       >
-                        <td style={{ padding: '12px 8px', fontWeight: 600, color: '#111827' }}>
-                          {inst.instituteName}
-                        </td>
+                        <td style={{ padding: '12px 8px', fontWeight: 600, color: '#111827' }}>{inst.instituteName}</td>
                         <td style={{ padding: '12px 8px', color: '#6b7280' }}>{inst.ownerName}</td>
-                        <td style={{ padding: '12px 8px', fontWeight: 600, color: '#374151' }}>
-                          ₹{inst.planAmount?.toLocaleString('en-IN')}
-                        </td>
+                        <td style={{ padding: '12px 8px', fontWeight: 600, color: '#374151' }}>₹{inst.planAmount?.toLocaleString('en-IN')}</td>
                         <td style={{ padding: '12px 8px' }}>
                           <span style={{
                             display: 'inline-flex', alignItems: 'center',
                             padding: '3px 10px', borderRadius: 20,
                             fontSize: '0.7rem', fontWeight: 700,
                             background: s.bg, color: s.text,
-                          }}>
-                            {s.label}
-                          </span>
+                          }}>{s.label}</span>
                         </td>
                       </tr>
                     );
@@ -307,8 +334,8 @@ export default function AdminDashboard() {
           </SectionCard>
         </div>
 
-        {/* Quick actions + active widget */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {/* Quick actions */}
+        <div className="actions-col">
           <SectionCard title="Quick Actions">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {quickActions.map(a => (
@@ -318,6 +345,7 @@ export default function AdminDashboard() {
                   background: a.bg, border: `1px solid ${a.border}`,
                   fontSize: '0.85rem', fontWeight: 600, color: a.color,
                   textAlign: 'left', transition: 'all 0.25s cubic-bezier(0.16,1,0.3,1)',
+                  width: '100%',
                 }}
                   onMouseEnter={e => {
                     e.currentTarget.style.transform = 'translateX(4px)';
@@ -334,7 +362,6 @@ export default function AdminDashboard() {
               ))}
             </div>
           </SectionCard>
-
         </div>
 
       </div>
@@ -343,6 +370,55 @@ export default function AdminDashboard() {
         @keyframes dashPulse {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.45; }
+        }
+
+        /* Stats grid: 1 col mobile → 2 col tablet → auto desktop */
+        .stats-grid {
+          display: grid;
+          gap: 14px;
+          grid-template-columns: 1fr;
+        }
+        .revenue-card {
+          grid-column: span 1;
+        }
+
+        /* Bottom section: stack on mobile, side-by-side on desktop */
+        .bottom-grid {
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+        }
+        .table-col { width: 100%; }
+        .actions-col { width: 100%; }
+
+        /* Mobile: show card list, hide table */
+        .mobile-inst-list { display: block; }
+        .desktop-inst-table { display: none; }
+
+        @media (min-width: 640px) {
+          .stats-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+          .revenue-card {
+            grid-column: span 2;
+          }
+        }
+
+        @media (min-width: 900px) {
+          .stats-grid {
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+          }
+          .revenue-card {
+            grid-column: span 2;
+          }
+          .bottom-grid {
+            flex-direction: row;
+            align-items: flex-start;
+          }
+          .table-col { flex: 1; min-width: 0; }
+          .actions-col { width: 280px; flex-shrink: 0; }
+          .mobile-inst-list { display: none; }
+          .desktop-inst-table { display: block; }
         }
       `}</style>
     </AdminLayout>
