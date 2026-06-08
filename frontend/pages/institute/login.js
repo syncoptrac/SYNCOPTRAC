@@ -1,67 +1,35 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import api, { setAuth, getUser } from '../../lib/api';
+import api, { setAuth } from '../../lib/api';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
 
 export default function InstituteLogin() {
   const [form, setForm] = useState({ loginId: '', password: '' });
   const [loading, setLoading] = useState(false);
-  const [lockoutSeconds, setLockoutSeconds] = useState(0);
-  const [warning, setWarning] = useState('');
-  const timerRef = useRef(null);
+  const [displaced, setDisplaced] = useState(false);
   const router = useRouter();
 
-  // If already logged in redirect away
   useEffect(() => {
-    const user = getUser();
-    if (!user) return;
-    if (user.role === 'institute') router.replace('/institute/dashboard');
-    else if (user.role === 'admin') router.replace('/admin/dashboard');
-  }, []);
-
-  // Countdown timer for lockout
-  useEffect(() => {
-    if (lockoutSeconds <= 0) { clearInterval(timerRef.current); return; }
-    timerRef.current = setInterval(() => {
-      setLockoutSeconds(s => {
-        if (s <= 1) { clearInterval(timerRef.current); return 0; }
-        return s - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timerRef.current);
-  }, [lockoutSeconds > 0]);
+    if (router.isReady) {
+      setDisplaced(router.query.reason === 'displaced');
+    }
+  }, [router.isReady, router.query.reason]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (lockoutSeconds > 0) return;
     setLoading(true);
-    setWarning('');
     try {
       const res = await api.post('/api/auth/institute/login', form);
       setAuth(res.data.token, res.data.user);
       toast.success(`Welcome, ${res.data.user.instituteName}!`);
       router.push('/institute/dashboard');
     } catch (err) {
-      const data = err.response?.data;
-      if (data?.error === 'TOO_MANY_ATTEMPTS') {
-        setLockoutSeconds(data.retryAfterSeconds || 120);
-        toast.error('Too many attempts — locked for 2 minutes');
-      } else {
-        if (data?.warning) setWarning(data.warning);
-        toast.error(data?.error || 'Login failed');
-      }
+      toast.error(err.response?.data?.error || 'Login failed');
     } finally {
       setLoading(false);
     }
   };
-
-  const isLocked = lockoutSeconds > 0;
-  const mins = Math.floor(lockoutSeconds / 60);
-  const secs = lockoutSeconds % 60;
-  const countdownLabel = mins > 0
-    ? `${mins}:${String(secs).padStart(2, '0')} remaining`
-    : `${secs}s remaining`;
 
   return (
     <div className="min-h-screen bg-brand-dark flex items-center justify-center p-4">
@@ -79,6 +47,25 @@ export default function InstituteLogin() {
           <p className="text-gray-600 text-xs italic mt-1">Where communication gets organised</p>
         </div>
 
+        {displaced && (
+          <div style={{
+            marginBottom: 16, padding: '14px 16px', borderRadius: 12,
+            background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.3)',
+            display: 'flex', alignItems: 'flex-start', gap: 10,
+          }}>
+            <span style={{ fontSize: '1.2rem', flexShrink: 0 }}>⚠️</span>
+            <div>
+              <p style={{ color: '#fca5a5', fontWeight: 700, fontSize: '0.875rem', marginBottom: 2 }}>
+                Session Ended
+              </p>
+              <p style={{ color: 'rgba(252,165,165,0.8)', fontSize: '0.8rem', lineHeight: 1.5 }}>
+                Someone else logged into this account on another device. Please log in again to continue.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Login card */}
         <div className="bg-brand-dark-light border border-gray-800 rounded-2xl shadow-xl p-6">
           {/* autoComplete="off" + name attributes different from admin form
               + readOnly trick on password ensures browser never autofills
@@ -111,28 +98,9 @@ export default function InstituteLogin() {
                 required
               />
             </div>
-            {warning && (
-              <p style={{ color: '#f59e0b', fontSize: '12px', textAlign: 'center', margin: '-4px 0 0' }}>
-                ⚠️ {warning}
-              </p>
-            )}
-            {isLocked && (
-              <div style={{
-                background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
-                borderRadius: 10, padding: '10px 14px', textAlign: 'center',
-              }}>
-                <p style={{ color: '#f87171', fontSize: '13px', fontWeight: 600, margin: 0 }}>
-                  🔒 Account temporarily locked
-                </p>
-                <p style={{ color: '#fca5a5', fontSize: '12px', margin: '4px 0 0' }}>
-                  {countdownLabel}
-                </p>
-              </div>
-            )}
-            <button type="submit" disabled={loading || isLocked}
-              className="w-full btn-primary py-2.5 mt-2"
-              style={{ opacity: isLocked ? 0.5 : 1, cursor: isLocked ? 'not-allowed' : 'pointer' }}>
-              {isLocked ? `Locked — ${countdownLabel}` : loading ? 'Signing in...' : 'Sign In'}
+            <button type="submit" disabled={loading}
+              className="w-full btn-primary py-2.5 mt-2">
+              {loading ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
         </div>
