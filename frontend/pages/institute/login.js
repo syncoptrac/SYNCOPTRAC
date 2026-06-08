@@ -33,12 +33,26 @@ export default function InstituteLogin() {
 
   return (
     <div className="min-h-screen bg-brand-dark flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
 
-        {/* Back to Home — top */}
-        <div className="mb-4 text-center">
-          <Link href="/" className="text-gray-500 hover:text-brand-gold text-xs">← Back to Home</Link>
-        </div>
+      {/* Back to Home — fixed top left corner */}
+      <div style={{ position: 'fixed', top: 16, left: 16, zIndex: 50 }}>
+        <Link href="/" style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          color: '#d4af37', fontWeight: 600, fontSize: '0.8rem',
+          textDecoration: 'none',
+          background: 'rgba(212,175,55,0.1)',
+          border: '1px solid rgba(212,175,55,0.25)',
+          padding: '6px 12px', borderRadius: 20,
+          transition: 'all 0.2s ease',
+        }}
+          onMouseEnter={e => e.currentTarget.style.background = 'rgba(212,175,55,0.2)'}
+          onMouseLeave={e => e.currentTarget.style.background = 'rgba(212,175,55,0.1)'}
+        >
+          ← Back to Home
+        </Link>
+      </div>
+
+      <div className="w-full max-w-sm">
 
         {/* Logo */}
         <div className="text-center mb-8">
