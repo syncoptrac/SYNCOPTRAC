@@ -60,21 +60,21 @@ const globalLimiter = rateLimit({
 });
 app.use(globalLimiter);
 
-// ─── Rate limiter for institute login only (admin has no IP-level limiter) ────
-// auth.js already handles per-loginId tracking (5 attempts → 2 min lockout).
-// This is a secondary IP-level net: 30 attempts per 2 min before IP is blocked.
-const instituteLimiter = rateLimit({
-  windowMs: 2 * 60 * 1000,
-  max: 30,
+const Institute = require('./models/Institute');
+
+// ─── Stricter limiter for auth endpoints (login only) ─────────────────────────
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'TOO_MANY_ATTEMPTS', message: 'Too many login attempts. Please wait 2 minutes before trying again.', retryAfterSeconds: 120 },
+  message: { error: 'Too many login attempts, please try again in 15 minutes.' },
 });
 
 // ─── Generous limiter for session polling (every 4s per user) ─────────────────
 const sessionPollLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute window
-  max: 60,             // 60 polls/min per IP (well above our 15/min rate)
+  windowMs: 60 * 1000,
+  max: 60,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many session checks.' },
@@ -89,14 +89,42 @@ const leadLimiter = rateLimit({
   message: { error: 'Too many submissions from this IP, please try again later.' },
 });
 
+// ─── verify-session: direct route BEFORE auth router ──────────────────────────
+// Mounted here so it bypasses authLimiter (20/15min) — poll fires every 4s
+app.get('/api/auth/verify-session', sessionPollLimiter, async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'SESSION_DISPLACED', message: 'No token.' });
+  }
+  try {
+    const jwt = require('jsonwebtoken');
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    if (decoded.role !== 'institute') return res.json({ valid: true });
+
+    if (!decoded.sessionId) {
+      return res.status(401).json({ error: 'SESSION_DISPLACED', message: 'Please log in again.' });
+    }
+
+    const institute = await Institute.findById(decoded.id).select('currentSessionId isActive');
+    if (!institute || !institute.isActive) {
+      return res.status(401).json({ error: 'SESSION_DISPLACED', message: 'Account inactive.' });
+    }
+    if (institute.currentSessionId !== decoded.sessionId) {
+      return res.status(401).json({
+        error: 'SESSION_DISPLACED',
+        message: 'Your session was ended because someone logged into this account on another device.',
+      });
+    }
+    res.json({ valid: true });
+  } catch {
+    res.status(401).json({ error: 'SESSION_DISPLACED', message: 'Session invalid.' });
+  }
+});
+
 // ─── Routes ───────────────────────────────────────────────────────────────────
-// Order matters — more specific paths first.
-// verify-session: frequent poll, generous limiter, no auth limiter
-app.use('/api/auth/verify-session', sessionPollLimiter, authRoutes);
-// Institute login: rate limited (2 min window)
-app.use('/api/auth/institute/login', instituteLimiter, authRoutes);
-// All other auth routes (admin/login, verify): no rate limiter
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/institute', instituteRoutes);
 app.use('/api/sheets', sheetsRoutes);
