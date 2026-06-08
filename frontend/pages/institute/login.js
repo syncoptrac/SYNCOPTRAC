@@ -34,6 +34,12 @@ export default function InstituteLogin() {
   return (
     <div className="min-h-screen bg-brand-dark flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
+
+        {/* Back to Home — top */}
+        <div className="mb-4 text-center">
+          <Link href="/" className="text-gray-500 hover:text-brand-gold text-xs">← Back to Home</Link>
+        </div>
+
         {/* Logo */}
         <div className="text-center mb-8">
           <Link href="/">
@@ -113,9 +119,6 @@ export default function InstituteLogin() {
           <p className="text-gray-700 text-xs">
             Admin?{' '}
             <Link href="/admin/login" className="text-gray-500 hover:text-brand-gold">Admin Login</Link>
-          </p>
-          <p className="text-gray-700 text-xs">
-            <Link href="/" className="text-gray-500 hover:text-brand-gold">← Back to Home</Link>
           </p>
         </div>
       </div>
