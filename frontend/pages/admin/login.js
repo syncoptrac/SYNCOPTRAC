@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
-import api, { setAuth, clearAuth } from '../../lib/api';
+import api, { setAuth } from '../../lib/api';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
 
@@ -8,9 +8,6 @@ export default function AdminLogin() {
   const [form, setForm] = useState({ username: '', password: '' });
   const [loading, setLoading] = useState(false);
   const router = useRouter();
-
-  // Always clear any existing session — credentials required every time
-  useState(() => { clearAuth(); });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -29,6 +26,25 @@ export default function AdminLogin() {
 
   return (
     <div className="min-h-screen bg-brand-dark flex items-center justify-center p-4">
+
+      {/* Back to Home — fixed top left corner */}
+      <div style={{ position: 'fixed', top: 16, left: 16, zIndex: 50 }}>
+        <Link href="/" style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          color: '#d4af37', fontWeight: 600, fontSize: '0.8rem',
+          textDecoration: 'none',
+          background: 'rgba(212,175,55,0.1)',
+          border: '1px solid rgba(212,175,55,0.25)',
+          padding: '6px 12px', borderRadius: 20,
+          transition: 'all 0.2s ease',
+        }}
+          onMouseEnter={e => e.currentTarget.style.background = 'rgba(212,175,55,0.2)'}
+          onMouseLeave={e => e.currentTarget.style.background = 'rgba(212,175,55,0.1)'}
+        >
+          ← Back to Home
+        </Link>
+      </div>
+
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="text-center mb-8">
@@ -81,9 +97,6 @@ export default function AdminLogin() {
           <p className="text-gray-600 text-xs">
             Institute login?{' '}
             <Link href="/institute/login" className="text-brand-gold hover:underline">Click here</Link>
-          </p>
-          <p className="text-gray-700 text-xs">
-            <Link href="/" className="text-gray-500 hover:text-brand-gold">← Back to Home</Link>
           </p>
         </div>
       </div>
