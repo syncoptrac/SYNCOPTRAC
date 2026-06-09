@@ -280,6 +280,24 @@ function deleteStudent(studentId) {
   const rowIndex = findRowByField(sheet, 'StudentID', studentId);
   if (rowIndex === -1) return { success: false, error: 'Student not found' };
   sheet.deleteRow(rowIndex);
+
+  // Also remove from Fees sheet so deleted students don't ghost in fee records
+  const feesSheet = getSheet(SHEETS.FEES);
+  const feesRow = findRowByField(feesSheet, 'StudentID', studentId);
+  if (feesRow !== -1) feesSheet.deleteRow(feesRow);
+
+  // Also remove attendance records for this student
+  const attendanceSheet = getSheet(SHEETS.ATTENDANCE);
+  // Delete in reverse order so row indices don't shift
+  const attData = attendanceSheet.getDataRange().getValues();
+  const header = attData[0];
+  const sidCol = header.indexOf('StudentID');
+  for (let i = attData.length - 1; i >= 1; i--) {
+    if (String(attData[i][sidCol]) === String(studentId)) {
+      attendanceSheet.deleteRow(i + 1);
+    }
+  }
+
   return { success: true, message: 'Student deleted' };
 }
 
