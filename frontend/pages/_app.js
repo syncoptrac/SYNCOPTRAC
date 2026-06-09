@@ -11,7 +11,6 @@ function ProgressBar({ active }) {
   useEffect(() => {
     if (active) {
       setWidth(0);
-      // Simulate progress
       timerRef.current = setInterval(() => {
         setWidth(w => {
           if (w >= 85) { clearInterval(timerRef.current); return 85; }
@@ -48,6 +47,8 @@ function ProgressBar({ active }) {
   );
 }
 
+// Next.js 15: pageProps type is now Promise<any> in App Router but stays
+// the same plain object in Pages Router — no change needed here.
 export default function App({ Component, pageProps }) {
   const router = useRouter();
   const [transitioning, setTransitioning] = useState(false);
@@ -63,12 +64,14 @@ export default function App({ Component, pageProps }) {
     router.events.on('routeChangeStart', handleStart);
     router.events.on('routeChangeComplete', handleDone);
     router.events.on('routeChangeError', handleDone);
+
     return () => {
       router.events.off('routeChangeStart', handleStart);
       router.events.off('routeChangeComplete', handleDone);
       router.events.off('routeChangeError', handleDone);
     };
-  }, [router]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <>
