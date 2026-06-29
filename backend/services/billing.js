@@ -4,8 +4,10 @@
 // At the start of every month, each active institute is emailed an automated
 // reminder of the amount (planAmount) they owe for the SYNCOPTRAC website
 // service. Sends are recorded in BillingLog and are idempotent per month.
+// Email is sent via the Brevo HTTP API (port 443) so it works on hosts that
+// block outbound SMTP (e.g. Render).
 // ============================================================================
-const nodemailer = require('nodemailer');
+const https = require('https');
 const Institute = require('../models/Institute');
 const BillingLog = require('../models/BillingLog');
 
@@ -38,34 +40,74 @@ function dueDateLabel(date) {
   }).format(due);
 }
 
-function getTransporter() {
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) return null;
-  return nodemailer.createTransport({
-    // Explicit Gmail SMTP over port 587 (STARTTLS). Some hosts block 465 but
-    // allow 587, so this can succeed where service:'gmail' (465) times out.
-    host: 'smtp.gmail.com',
-    port: 587,
-    secure: false,
-    requireTLS: true,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-    // Be tolerant of cold-start / slow network: wait longer before timing out.
-    connectionTimeout: 30000,
-    greetingTimeout: 30000,
-    socketTimeout: 45000,
-  });
-}
-
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Sends with automatic retry so a transient connection timeout (common right
-// after a cold start) doesn't fail the whole send. Backs off between tries.
-async function sendWithRetry(transporter, mailOptions, attempts = 3) {
+// True when the HTTP email provider (Brevo) is configured.
+function emailConfigured() {
+  return !!process.env.BREVO_API_KEY;
+}
+
+// Low-level HTTPS JSON POST over port 443 — works on hosts (like Render) that
+// block outbound SMTP. Rejects on non-2xx responses.
+function postJson(hostname, path, headers, bodyObj) {
+  return new Promise((resolve, reject) => {
+    const data = JSON.stringify(bodyObj);
+    const req = https.request(
+      {
+        hostname,
+        path,
+        method: 'POST',
+        headers: Object.assign({ 'Content-Length': Buffer.byteLength(data) }, headers),
+        timeout: 30000,
+      },
+      (res) => {
+        let chunks = '';
+        res.on('data', (c) => { chunks += c; });
+        res.on('end', () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve({ statusCode: res.statusCode, body: chunks });
+          } else {
+            reject(new Error(`HTTP ${res.statusCode}: ${chunks}`));
+          }
+        });
+      }
+    );
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(new Error('Request timeout')); });
+    req.write(data);
+    req.end();
+  });
+}
+
+// Sends one email through the Brevo HTTP API.
+async function sendEmail(mail) {
+  const senderEmail = process.env.BREVO_SENDER_EMAIL || process.env.SMTP_USER;
+  const senderName = process.env.BREVO_SENDER_NAME || 'SYNCOPTRAC Billing';
+  return postJson(
+    'api.brevo.com',
+    '/v3/smtp/email',
+    {
+      'api-key': process.env.BREVO_API_KEY,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    {
+      sender: { name: senderName, email: senderEmail },
+      to: [{ email: mail.to }],
+      subject: mail.subject,
+      htmlContent: mail.html,
+    }
+  );
+}
+
+// Retries a send so a transient network hiccup doesn't fail it outright.
+async function sendWithRetry(mail, attempts = 3) {
   let lastErr;
   for (let i = 1; i <= attempts; i += 1) {
     try {
-      return await transporter.sendMail(mailOptions);
+      return await sendEmail(mail);
     } catch (err) {
       lastErr = err;
       console.warn(`[billing] send attempt ${i}/${attempts} failed: ${err.message}`);
@@ -134,12 +176,11 @@ async function sendMonthlyBills(options) {
   const { key: monthKey, label: monthLabel } = monthInfo(now);
   const due = dueDateLabel(now);
 
-  const transporter = getTransporter();
   const summary = { monthKey, monthLabel, trigger, total: 0, sent: 0, skipped: 0, failed: 0, results: [] };
 
-  if (!transporter) {
-    console.warn('[billing] SMTP env vars not set \u2014 skipping monthly billing emails.');
-    summary.error = 'SMTP not configured';
+  if (!emailConfigured()) {
+    console.warn('[billing] BREVO_API_KEY not set \u2014 skipping monthly billing emails.');
+    summary.error = 'Email provider not configured';
     return summary;
   }
 
@@ -163,8 +204,7 @@ async function sendMonthlyBills(options) {
 
     const { subject, html } = buildEmail(inst, monthLabel, due);
     try {
-      await sendWithRetry(transporter, {
-        from: `"SYNCOPTRAC Billing" <${process.env.SMTP_USER}>`,
+      await sendWithRetry({
         to: inst.email,
         subject,
         html,
