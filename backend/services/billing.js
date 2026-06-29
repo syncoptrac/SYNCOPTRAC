@@ -41,10 +41,13 @@ function dueDateLabel(date) {
 function getTransporter() {
   if (!process.env.SMTP_USER || !process.env.SMTP_PASS) return null;
   return nodemailer.createTransport({
-    service: 'gmail',
+    // Explicit Gmail SMTP over port 587 (STARTTLS). Some hosts block 465 but
+    // allow 587, so this can succeed where service:'gmail' (465) times out.
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false,
+    requireTLS: true,
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-    pool: true,
-    maxConnections: 1,
     // Be tolerant of cold-start / slow network: wait longer before timing out.
     connectionTimeout: 30000,
     greetingTimeout: 30000,
