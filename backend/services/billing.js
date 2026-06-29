@@ -43,7 +43,33 @@ function getTransporter() {
   return nodemailer.createTransport({
     service: 'gmail',
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    pool: true,
+    maxConnections: 1,
+    // Be tolerant of cold-start / slow network: wait longer before timing out.
+    connectionTimeout: 30000,
+    greetingTimeout: 30000,
+    socketTimeout: 45000,
   });
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Sends with automatic retry so a transient connection timeout (common right
+// after a cold start) doesn't fail the whole send. Backs off between tries.
+async function sendWithRetry(transporter, mailOptions, attempts = 3) {
+  let lastErr;
+  for (let i = 1; i <= attempts; i += 1) {
+    try {
+      return await transporter.sendMail(mailOptions);
+    } catch (err) {
+      lastErr = err;
+      console.warn(`[billing] send attempt ${i}/${attempts} failed: ${err.message}`);
+      if (i < attempts) await sleep(3000 * i);
+    }
+  }
+  throw lastErr;
 }
 
 function buildEmail(institute, monthLabel, due) {
@@ -133,7 +159,7 @@ async function sendMonthlyBills(options) {
 
     const { subject, html } = buildEmail(inst, monthLabel, due);
     try {
-      await transporter.sendMail({
+      await sendWithRetry(transporter, {
         from: `"SYNCOPTRAC Billing" <${process.env.SMTP_USER}>`,
         to: inst.email,
         subject,
