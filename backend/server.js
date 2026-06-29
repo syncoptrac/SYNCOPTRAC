@@ -148,11 +148,15 @@ app.use((err, req, res, next) => {
 });
 
 // ─── Connect to MongoDB ───────────────────────────────────────────────────────
+const { startBillingScheduler } = require('./services/billingScheduler');
+
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => {
     console.log('✅ MongoDB connected');
     const PORT = process.env.PORT || 5000;
     app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+    // Start the monthly website-service billing automation (1st of month, 09:00 IST)
+    startBillingScheduler();
   })
   .catch(err => {
     console.error('❌ MongoDB connection failed:', err);

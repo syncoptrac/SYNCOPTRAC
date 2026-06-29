@@ -5,6 +5,8 @@ const { requireAdmin } = require('../middleware/auth');
 const Institute = require('../models/Institute');
 const Lead = require('../models/Lead');
 const Admin = require('../models/Admin');
+const BillingLog = require('../models/BillingLog');
+const { sendMonthlyBills } = require('../services/billing');
 
 // Generate unique login ID
 function generateLoginId(instituteName) {
@@ -249,6 +251,29 @@ router.delete('/leads/:id', requireAdmin, async (req, res) => {
     const lead = await Lead.findByIdAndDelete(req.params.id);
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
     res.json({ message: 'Lead deleted' });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/admin/billing/run - Manually trigger the monthly website-service
+// billing emails (same routine the scheduler runs on the 1st of each month).
+// Idempotent: institutes already billed this month are skipped.
+router.post('/billing/run', requireAdmin, async (req, res) => {
+  try {
+    const summary = await sendMonthlyBills({ trigger: 'manual' });
+    res.json({ message: 'Monthly billing run complete', ...summary });
+  } catch (err) {
+    console.error('Manual billing run failed:', err.message);
+    res.status(500).json({ error: 'Billing run failed' });
+  }
+});
+
+// GET /api/admin/billing/logs - Recent billing history (most recent first)
+router.get('/billing/logs', requireAdmin, async (req, res) => {
+  try {
+    const logs = await BillingLog.find().sort({ sentAt: -1 }).limit(200);
+    res.json(logs);
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
