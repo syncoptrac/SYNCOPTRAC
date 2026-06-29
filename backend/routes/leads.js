@@ -36,7 +36,7 @@ function postJson(hostname, path, headers, bodyObj) {
   });
 }
 
-// ─── Helper: send new-lead notification via Brevo HTTP API ───────────────────
+// ─── Helper: send new-lead notification via Brevo HTTP API ───────────────
 async function sendLeadEmail(lead) {
   if (!process.env.BREVO_API_KEY || !process.env.ADMIN_EMAIL) {
     console.warn('Email env vars not set (BREVO_API_KEY / ADMIN_EMAIL) — skipping notification email.');
@@ -86,12 +86,6 @@ async function sendLeadEmail(lead) {
               <td style="padding:10px 12px;border:1px solid #eee">${new Date(lead.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST</td>
             </tr>
           </table>
-          <div style="margin-top:20px;text-align:center">
-            <a href="${process.env.FRONTEND_URL}/admin/leads"
-              style="background:#5ce1e6;color:#11245d;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;display:inline-block">
-              View in Admin Dashboard
-            </a>
-          </div>
         </div>
       </div>
     `;
@@ -114,7 +108,7 @@ async function sendLeadEmail(lead) {
   );
 }
 
-// ─── POST /api/leads — Submit enquiry (public) ────────────────────────────────
+// ─── POST /api/leads — Submit enquiry (public) ───────────────────────────
 router.post('/', [
   body('instituteName').trim().notEmpty().withMessage('Institute name is required'),
   body('ownerName').trim().notEmpty().withMessage('Owner name is required'),
@@ -144,7 +138,7 @@ router.post('/', [
   }
 });
 
-// ─── GET /api/leads — Get all leads (admin) ───────────────────────────────────
+// ─── GET /api/leads — Get all leads (admin) ────────────────────────────
 router.get('/', requireAdmin, async (req, res) => {
   try {
     const leads = await Lead.find().sort({ createdAt: -1 });
@@ -154,7 +148,7 @@ router.get('/', requireAdmin, async (req, res) => {
   }
 });
 
-// ─── PATCH /api/leads/:id — Update lead status (admin) ───────────────────────
+// ─── PATCH /api/leads/:id — Update lead status (admin) ───────────────
 router.patch('/:id', requireAdmin, async (req, res) => {
   try {
     const lead = await Lead.findByIdAndUpdate(req.params.id, req.body, { new: true });
@@ -165,7 +159,7 @@ router.patch('/:id', requireAdmin, async (req, res) => {
   }
 });
 
-// ─── DELETE /api/leads/:id — Delete lead (admin) ─────────────────────────────
+// ─── DELETE /api/leads/:id — Delete lead (admin) ─────────────────
 router.delete('/:id', requireAdmin, async (req, res) => {
   try {
     await Lead.findByIdAndDelete(req.params.id);
