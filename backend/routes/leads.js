@@ -1,30 +1,51 @@
 const express = require('express');
 const router = express.Router();
 const { body, validationResult } = require('express-validator');
-const nodemailer = require('nodemailer');
+const https = require('https');
 const Lead = require('../models/Lead');
 const { requireAdmin } = require('../middleware/auth');
 
-// ─── Helper: send notification email ─────────────────────────────────────────
+// ─── Helper: HTTPS JSON POST over port 443 (works where SMTP is blocked) ─────
+function postJson(hostname, path, headers, bodyObj) {
+  return new Promise((resolve, reject) => {
+    const data = JSON.stringify(bodyObj);
+    const req = https.request(
+      {
+        hostname,
+        path,
+        method: 'POST',
+        headers: Object.assign({ 'Content-Length': Buffer.byteLength(data) }, headers),
+        timeout: 30000,
+      },
+      (res) => {
+        let chunks = '';
+        res.on('data', (c) => { chunks += c; });
+        res.on('end', () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve({ statusCode: res.statusCode, body: chunks });
+          } else {
+            reject(new Error(`HTTP ${res.statusCode}: ${chunks}`));
+          }
+        });
+      }
+    );
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(new Error('Request timeout')); });
+    req.write(data);
+    req.end();
+  });
+}
+
+// ─── Helper: send new-lead notification via Brevo HTTP API ───────────────────
 async function sendLeadEmail(lead) {
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS || !process.env.ADMIN_EMAIL) {
-    console.warn('Email env vars not set — skipping notification email.');
+  if (!process.env.BREVO_API_KEY || !process.env.ADMIN_EMAIL) {
+    console.warn('Email env vars not set (BREVO_API_KEY / ADMIN_EMAIL) — skipping notification email.');
     return;
   }
 
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    }
-  });
-
-  await transporter.sendMail({
-    from: `"SYNCOPTRAC" <${process.env.SMTP_USER}>`,
-    to: process.env.ADMIN_EMAIL,
-    subject: `New Lead: ${lead.instituteName}`,
-    html: `
+  const senderEmail = process.env.BREVO_SENDER_EMAIL || process.env.SMTP_USER;
+  const senderName = process.env.BREVO_SENDER_NAME || 'SYNCOPTRAC';
+  const html = `
       <div style="font-family:sans-serif;max-width:600px;margin:auto;border:1px solid #eee;border-radius:12px;overflow:hidden">
         <div style="background:#11245d;padding:24px;text-align:center">
           <h2 style="color:#5ce1e6;margin:0">SYNCOPTRAC</h2>
@@ -73,8 +94,24 @@ async function sendLeadEmail(lead) {
           </div>
         </div>
       </div>
-    `
-  });
+    `;
+
+  await postJson(
+    'api.brevo.com',
+    '/v3/smtp/email',
+    {
+      'api-key': process.env.BREVO_API_KEY,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    {
+      sender: { name: senderName, email: senderEmail },
+      to: [{ email: process.env.ADMIN_EMAIL }],
+      replyTo: { email: lead.email, name: lead.ownerName },
+      subject: `New Lead: ${lead.instituteName}`,
+      htmlContent: html,
+    }
+  );
 }
 
 // ─── POST /api/leads — Submit enquiry (public) ────────────────────────────────
