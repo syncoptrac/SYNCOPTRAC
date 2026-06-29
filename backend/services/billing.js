@@ -122,7 +122,7 @@ function buildEmail(institute, monthLabel, due) {
 }
 
 // Core routine. Emails every active institute its monthly service fee.
-// Idempotent: skips any institute already logged for the given monthKey.
+// Idempotent: skips any institute already SUCCESSFULLY billed for the monthKey.
 // Returns a summary object.
 async function sendMonthlyBills(options) {
   const opts = options || {};
@@ -144,11 +144,12 @@ async function sendMonthlyBills(options) {
   summary.total = institutes.length;
 
   for (const inst of institutes) {
-    // Idempotency guard \u2014 already billed this month?
+    // Idempotency guard: only a SUCCESSFUL prior send blocks a re-send.
+    // A previous FAILED attempt should be retried, not skipped.
     const already = await BillingLog.findOne({ institute: inst._id, monthKey });
-    if (already) {
+    if (already && already.status === 'sent') {
       summary.skipped += 1;
-      summary.results.push({ institute: inst.instituteName, status: 'skipped' });
+      summary.results.push({ institute: inst.instituteName, status: 'skipped', reason: 'already billed' });
       continue;
     }
     if (!inst.email) {
@@ -165,23 +166,31 @@ async function sendMonthlyBills(options) {
         subject,
         html,
       });
-      await BillingLog.create({
-        institute: inst._id,
-        instituteName: inst.instituteName,
-        email: inst.email,
-        monthKey, monthLabel,
-        amount: inst.planAmount,
-        status: 'sent',
-        trigger,
-      });
+      // Upsert so a previously failed attempt for this month is overwritten.
+      await BillingLog.findOneAndUpdate(
+        { institute: inst._id, monthKey },
+        {
+          institute: inst._id,
+          instituteName: inst.instituteName,
+          email: inst.email,
+          monthKey, monthLabel,
+          amount: inst.planAmount,
+          status: 'sent',
+          error: null,
+          trigger,
+          sentAt: new Date(),
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
       summary.sent += 1;
       summary.results.push({ institute: inst.instituteName, status: 'sent' });
     } catch (err) {
       summary.failed += 1;
       summary.results.push({ institute: inst.instituteName, status: 'failed', reason: err.message });
-      // Record failure (best-effort) without breaking idempotency for retries.
-      try {
-        await BillingLog.create({
+      // Record the failure via upsert so a later successful retry can overwrite it.
+      await BillingLog.findOneAndUpdate(
+        { institute: inst._id, monthKey },
+        {
           institute: inst._id,
           instituteName: inst.instituteName,
           email: inst.email,
@@ -190,8 +199,10 @@ async function sendMonthlyBills(options) {
           status: 'failed',
           error: err.message,
           trigger,
-        });
-      } catch (_) { /* duplicate key on retry \u2014 ignore */ }
+          sentAt: new Date(),
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
       console.error(`[billing] Failed to email ${inst.instituteName}:`, err.message);
     }
   }
