@@ -75,6 +75,22 @@ function scheduleNext() {
 function startBillingScheduler() {
   if (global.__billingSchedulerStarted) return;
   global.__billingSchedulerStarted = true;
+
+  // TEST MODE: set BILLING_TEST_NOW=true in your .env to fire one real billing
+  // pass ~5s after startup (emails go out against your live data). Normal
+  // monthly scheduling still continues afterwards. Remove the flag when done.
+  if (String(process.env.BILLING_TEST_NOW).toLowerCase() === 'true') {
+    console.log('[billing] TEST MODE active — running a billing pass in 5s (BILLING_TEST_NOW=true).');
+    setTimeout(async () => {
+      try {
+        const summary = await sendMonthlyBills({ trigger: 'manual' });
+        console.log(`[billing] TEST run done — sent ${summary.sent}, skipped ${summary.skipped}, failed ${summary.failed} of ${summary.total}.`);
+      } catch (err) {
+        console.error('[billing] TEST run failed:', err.message);
+      }
+    }, 5000);
+  }
+
   scheduleNext();
 }
 
