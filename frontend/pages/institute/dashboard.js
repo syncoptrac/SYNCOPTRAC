@@ -186,7 +186,7 @@ export default function InstituteDashboard() {
             </div>
             <div className="track"><span className="fill" style={wpct(collectRate)} /></div>
             <div className="fee-rows">
-              <div className="fee-row"><span className="dot" style={bg('#d97706')} />Pending<b>₹{fmt(pendingFees)}</b></div>
+              <div className="fee-row"><span className="dot" style={bg('#059669')} />Paid<b>₹{fmt(collectedFees)}</b></div>
               <div className="fee-row"><span className="dot" style={bg('#dc2626')} />Overdue Students<b>{overdueStudents}</b></div>
             </div>
           </article>
