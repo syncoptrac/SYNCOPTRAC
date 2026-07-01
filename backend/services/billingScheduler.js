@@ -71,10 +71,59 @@ function scheduleNext() {
   }, delay);
 }
 
+// Optional one-off run controlled by the BILLING_ONE_OFF env var.
+// Accepts "YYYY-MM-DD" (runs at 09:00 IST that day) or a full ISO datetime.
+// Useful for verifying delivery on a specific date without waiting for the 1st.
+function msUntilOneOff() {
+  const raw = (process.env.BILLING_ONE_OFF || '').trim();
+  if (!raw) return null;
+  const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
+  let targetUtcMs;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const [y, m, d] = raw.split('-').map(Number);
+    targetUtcMs = Date.UTC(y, m - 1, d, RUN_HOUR_IST, 0, 0) - IST_OFFSET_MS;
+  } else {
+    const parsed = Date.parse(raw);
+    if (Number.isNaN(parsed)) {
+      console.error(`[billing] Ignoring invalid BILLING_ONE_OFF value: "${raw}"`);
+      return null;
+    }
+    targetUtcMs = parsed;
+  }
+  return targetUtcMs - Date.now();
+}
+
+function scheduleOneOff() {
+  const delay = msUntilOneOff();
+  if (delay == null) return;
+  if (delay <= 0) {
+    console.log('[billing] BILLING_ONE_OFF is in the past — skipping one-off run.');
+    return;
+  }
+  const runAt = new Date(Date.now() + delay);
+  console.log(`[billing] One-off billing run scheduled for ${runAt.toISOString()} (UTC).`);
+  const MAX = 2 ** 31 - 1;
+  const arm = (ms) => {
+    if (ms > MAX) { setTimeout(() => arm(ms - MAX), MAX); return; }
+    setTimeout(async () => {
+      try {
+        console.log('[billing] Running one-off (BILLING_ONE_OFF) billing now.');
+        await sendMonthlyBills({ trigger: 'scheduled' });
+      } catch (err) {
+        console.error('[billing] One-off run failed:', err.message);
+      }
+    }, ms);
+  };
+  arm(delay);
+}
+
 // Start the recurring schedule. Safe to call once at server boot.
 function startBillingScheduler() {
   if (global.__billingSchedulerStarted) return;
   global.__billingSchedulerStarted = true;
+
+  // Optional: fire once on a specific date set via BILLING_ONE_OFF.
+  scheduleOneOff();
 
   // Reminders run automatically on the 1st of every month at 09:00 IST.
   // For an on-demand run, use POST /api/admin/billing/run from the admin app.
