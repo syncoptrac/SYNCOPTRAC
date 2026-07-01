@@ -48,8 +48,27 @@ function msUntilNextRun() {
   return delay > 0 ? delay : 60 * 1000; // safety floor
 }
 
+// One-time override for the NEXT monthly run, set via BILLING_NEXT_OVERRIDE
+// (full ISO datetime). Used only for the first run after boot, then the
+// scheduler reverts to the normal 1st-of-month 09:00 IST cadence.
+let __monthlyOverrideConsumed = false;
+function nextRunDelay() {
+  const override = (process.env.BILLING_NEXT_OVERRIDE || '').trim();
+  if (override && !__monthlyOverrideConsumed) {
+    __monthlyOverrideConsumed = true;
+    const parsed = Date.parse(override);
+    const d = parsed - Date.now();
+    if (!Number.isNaN(parsed) && d > 0) {
+      console.log('[billing] Using BILLING_NEXT_OVERRIDE for the next monthly run (one-time).');
+      return d;
+    }
+    console.log(`[billing] BILLING_NEXT_OVERRIDE ignored (invalid or in the past): "${override}"`);
+  }
+  return msUntilNextRun();
+}
+
 function scheduleNext() {
-  const delay = msUntilNextRun();
+  const delay = nextRunDelay();
   const runAt = new Date(Date.now() + delay);
   console.log(`[billing] Next monthly billing run scheduled for ${runAt.toISOString()} (UTC).`);
 
