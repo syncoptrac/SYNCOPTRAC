@@ -1,12 +1,13 @@
 // ============================================================================
 // Dependency-free monthly scheduler for website-service billing.
-// Fires on the 1st of every month at 09:00 IST and emails active institutes.
+// Fires on the 2nd of every month at 09:00 IST and emails active institutes.
 // Uses setTimeout (re-armed after each run) so no external cron lib is needed.
 // ============================================================================
 const { sendMonthlyBills } = require('./billing');
 
 const TZ = 'Asia/Kolkata';
-const RUN_HOUR_IST = 9; // 09:00 IST on the 1st of each month
+const RUN_HOUR_IST = 9; // 09:00 IST
+const RUN_DAY_IST = 2;  // 2nd day of each month
 
 // Current wall-clock parts in IST.
 function nowPartsIST() {
@@ -23,27 +24,24 @@ function nowPartsIST() {
   };
 }
 
-// Milliseconds from now until the next 1st-of-month 09:00 IST.
+// Milliseconds from now until the next RUN_DAY_IST-of-month 09:00 IST.
 function msUntilNextRun() {
   const ist = nowPartsIST();
   // IST is UTC+5:30 (no DST), so an IST wall time maps to a fixed UTC instant.
   const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
 
-  // Build the next target: 1st of next month at RUN_HOUR_IST:00 IST.
+  // Candidate: this month's run day at RUN_HOUR_IST IST.
   let year = ist.year;
   let month = ist.month; // 1-12
+  let targetUtcMs = Date.UTC(year, month - 1, RUN_DAY_IST, RUN_HOUR_IST, 0, 0) - IST_OFFSET_MS;
 
-  // If we're still before the run time on the 1st, target is today.
-  const beforeRunToday = ist.day === 1 &&
-    (ist.hour < RUN_HOUR_IST || (ist.hour === RUN_HOUR_IST && ist.minute === 0 && ist.second === 0));
-
-  if (!beforeRunToday) {
+  // If that instant has already passed this month, roll to next month.
+  if (targetUtcMs - Date.now() <= 0) {
     month += 1;
     if (month > 12) { month = 1; year += 1; }
+    targetUtcMs = Date.UTC(year, month - 1, RUN_DAY_IST, RUN_HOUR_IST, 0, 0) - IST_OFFSET_MS;
   }
 
-  // Target instant (UTC epoch) for year-month-01 RUN_HOUR:00:00 IST.
-  const targetUtcMs = Date.UTC(year, month - 1, 1, RUN_HOUR_IST, 0, 0) - IST_OFFSET_MS;
   const delay = targetUtcMs - Date.now();
   return delay > 0 ? delay : 60 * 1000; // safety floor
 }
@@ -144,7 +142,7 @@ function startBillingScheduler() {
   // Optional: fire once on a specific date set via BILLING_ONE_OFF.
   scheduleOneOff();
 
-  // Reminders run automatically on the 1st of every month at 09:00 IST.
+  // Reminders run automatically on the 2nd of every month at 09:00 IST.
   // For an on-demand run, use POST /api/admin/billing/run from the admin app.
   scheduleNext();
 }
