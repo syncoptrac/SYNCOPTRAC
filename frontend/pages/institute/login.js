@@ -64,7 +64,7 @@ export default function InstituteLogin() {
             <span style={{color:"#ffffff"}}>TRAC</span>
           </h1>
           <p className="text-gray-400 text-sm mt-1">Institute Portal</p>
-          <p className="text-gray-600 text-xs italic mt-1">Where communication gets organised</p>
+          <p className="text-gray-600 text-xs italic mt-1">Where communication gets organised and nothing is missed</p>
         </div>
 
         {displaced && (
