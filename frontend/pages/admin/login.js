@@ -54,7 +54,7 @@ export default function AdminLogin() {
             <span style={{color:"#ffffff"}}>TRAC</span>
           </h1>
           <p className="text-gray-400 text-sm mt-1">Admin Portal</p>
-          <p className="text-gray-600 text-xs italic mt-1">Where communication gets organised</p>
+          <p className="text-gray-600 text-xs italic mt-1">Where communication gets organised and nothing is</p>
         </div>
 
         <div className="bg-brand-dark-light border border-brand-dark-light rounded-2xl p-6 shadow-xl">
