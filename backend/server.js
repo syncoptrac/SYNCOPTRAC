@@ -15,6 +15,12 @@ const leadsRoutes = require('./routes/leads');
 
 const app = express();
 
+// ─── Trust the reverse proxy (Render/Vercel) ─────────────────────────────────
+// Render terminates TLS at its load balancer and forwards requests with an
+// X-Forwarded-For header. Trusting the first proxy hop lets express-rate-limit
+// read the real client IP instead of throwing ERR_ERL_UNEXPECTED_X_FORWARDED_FOR.
+app.set('trust proxy', 1);
+
 // ─── Security headers (helmet) ────────────────────────────────────────────────
 app.use(helmet({
   contentSecurityPolicy: false, // keep false — API only, no HTML served
