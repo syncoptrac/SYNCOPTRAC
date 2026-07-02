@@ -103,7 +103,8 @@ router.post('/institutes', requireAdmin, [
   body('phone').trim().notEmpty(),
   body('googleSheetId').trim().notEmpty(),
   body('appsScriptUrl').trim().notEmpty(),
-  body('planAmount').isNumeric()
+  body('planAmount').isNumeric(),
+  body('billingDay').optional().isInt({ min: 1, max: 31 })
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
@@ -111,7 +112,7 @@ router.post('/institutes', requireAdmin, [
   try {
     const {
       instituteName, ownerName, email, phone, instituteType,
-      googleSheetId, appsScriptUrl, planAmount, paymentStatus, dueDate
+      googleSheetId, appsScriptUrl, planAmount, paymentStatus, dueDate, billingDay
     } = req.body;
 
     // Check duplicate email
@@ -137,7 +138,8 @@ router.post('/institutes', requireAdmin, [
       appsScriptUrl,
       planAmount: parseFloat(planAmount),
       paymentStatus: paymentStatus || 'overdue',
-      dueDate: dueDate ? new Date(dueDate) : undefined
+      dueDate: dueDate ? new Date(dueDate) : undefined,
+      billingDay: billingDay ? Math.min(Math.max(parseInt(billingDay, 10), 1), 31) : 1
     });
 
     await institute.save();
@@ -165,6 +167,9 @@ router.put('/institutes/:id', requireAdmin, async (req, res) => {
     const updates = req.body;
     delete updates.password; // Don't update password through this route
     delete updates.loginId;  // Don't change loginId
+    if (updates.billingDay !== undefined) {
+      updates.billingDay = Math.min(Math.max(parseInt(updates.billingDay, 10) || 1, 1), 31);
+    }
 
     const institute = await Institute.findByIdAndUpdate(
       req.params.id,
@@ -182,7 +187,7 @@ router.put('/institutes/:id', requireAdmin, async (req, res) => {
 // PATCH /api/admin/institutes/:id  (activate/deactivate / payment status updates)
 router.patch('/institutes/:id', requireAdmin, async (req, res) => {
   try {
-    const allowed = ['isActive', 'paymentStatus', 'planAmount', 'dueDate'];
+    const allowed = ['isActive', 'paymentStatus', 'planAmount', 'dueDate', 'billingDay'];
     const updates = {};
     allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
     updates.updatedAt = new Date();

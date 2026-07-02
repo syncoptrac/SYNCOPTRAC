@@ -18,6 +18,8 @@ const instituteSchema = new mongoose.Schema({
   
   // Billing
   planAmount: { type: Number, required: true },
+  // Billing day of month (1-31) this institute is charged on, every month
+  billingDay: { type: Number, min: 1, max: 31, default: 1 },
   paymentStatus: { 
     type: String, 
     enum: ['paid', 'overdue'], 

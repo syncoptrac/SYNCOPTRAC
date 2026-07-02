@@ -8,7 +8,7 @@ import toast from 'react-hot-toast';
 const EMPTY_FORM = {
   instituteName: '', ownerName: '', email: '', phone: '',
   instituteType: 'Coaching Centre', googleSheetId: '', appsScriptUrl: '',
-  planAmount: '', paymentStatus: 'paid', dueDate: '', password: ''
+  planAmount: '', paymentStatus: 'paid', dueDate: '', billingDay: 1, password: ''
 };
 
 // ── Separate credentials modal so it can't be accidentally dismissed ──────────
@@ -149,6 +149,7 @@ export default function AdminInstitutes() {
       instituteType: inst.instituteType || 'Coaching Centre',
       googleSheetId: inst.googleSheetId, appsScriptUrl: inst.appsScriptUrl,
       planAmount: inst.planAmount, paymentStatus: inst.paymentStatus,
+      billingDay: inst.billingDay || 1,
       dueDate: inst.dueDate ? inst.dueDate.substring(0, 10) : ''
     });
     setShowModal(true);
@@ -230,7 +231,7 @@ export default function AdminInstitutes() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
-                  {['Institute Name','Owner Name','Login ID','Email','Phone','Institute Type','Plan','Status','Payment Status','Join Date','Actions'].map(h => (
+                  {['Institute Name','Owner Name','Login ID','Email','Phone','Institute Type','Plan','Bill Day','Status','Payment Status','Join Date','Actions'].map(h => (
                     <th key={h} className="text-left text-gray-500 font-medium px-4 py-3 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -245,6 +246,7 @@ export default function AdminInstitutes() {
                     <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{inst.phone || '—'}</td>
                     <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{inst.instituteType || '—'}</td>
                     <td className="px-4 py-3 text-gray-700 font-medium whitespace-nowrap">₹{inst.planAmount?.toLocaleString('en-IN')}</td>
+                    <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{inst.billingDay || 1}</td>
                     <td className="px-4 py-3">
                       <span className={inst.isActive !== false ? 'badge-green' : 'badge-red'}>
                         {inst.isActive !== false ? 'Active' : 'Inactive'}
@@ -273,7 +275,7 @@ export default function AdminInstitutes() {
                   </tr>
                 ))}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={11} className="px-4 py-12 text-center text-gray-400">
+                  <tr><td colSpan={12} className="px-4 py-12 text-center text-gray-400">
                     {search ? 'No institutes match your search' : 'No institutes yet. Add one!'}
                   </td></tr>
                 )}
@@ -373,6 +375,12 @@ export default function AdminInstitutes() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
               <input type="date" className="input-field" value={form.dueDate}
                 onChange={e => set('dueDate', e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Payment Date (day of month) *</label>
+              <input type="number" min="1" max="31" className="input-field" value={form.billingDay}
+                onChange={e => set('billingDay', e.target.value)} required placeholder="e.g. 5" />
+              <p className="text-xs text-gray-400 mt-1">Invoice auto-sends on this day of every month (1-31).</p>
             </div>
           </div>
           <div className="flex gap-3 pt-2">

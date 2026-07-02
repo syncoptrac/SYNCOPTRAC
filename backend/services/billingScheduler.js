@@ -1,13 +1,13 @@
 // ============================================================================
-// Dependency-free monthly scheduler for website-service billing.
-// Fires on the 2nd of every month at 09:00 IST and emails active institutes.
-// Uses setTimeout (re-armed after each run) so no external cron lib is needed.
+// Dependency-free DAILY scheduler for website-service billing.
+// Runs every day at 09:00 IST. billing.js then charges only the institutes
+// whose billingDay matches that day (with last-day-of-month safety), so every
+// institute is billed on its own date, each month, automatically.
 // ============================================================================
 const { sendMonthlyBills } = require('./billing');
 
 const TZ = 'Asia/Kolkata';
-const RUN_HOUR_IST = 9; // 09:00 IST
-const RUN_DAY_IST = 2;  // 2nd day of each month
+const RUN_HOUR_IST = 9; // 09:00 IST daily
 
 // Current wall-clock parts in IST.
 function nowPartsIST() {
@@ -24,40 +24,28 @@ function nowPartsIST() {
   };
 }
 
-// Milliseconds from now until the next RUN_DAY_IST-of-month 09:00 IST.
+// Milliseconds until the next 09:00 IST (today if still before 9, else tomorrow).
 function msUntilNextRun() {
   const ist = nowPartsIST();
-  // IST is UTC+5:30 (no DST), so an IST wall time maps to a fixed UTC instant.
-  const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
-
-  // Candidate: this month's run day at RUN_HOUR_IST IST.
-  let year = ist.year;
-  let month = ist.month; // 1-12
-  let targetUtcMs = Date.UTC(year, month - 1, RUN_DAY_IST, RUN_HOUR_IST, 0, 0) - IST_OFFSET_MS;
-
-  // If that instant has already passed this month, roll to next month.
+  const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000; // IST = UTC+5:30, no DST
+  let targetUtcMs = Date.UTC(ist.year, ist.month - 1, ist.day, RUN_HOUR_IST, 0, 0) - IST_OFFSET_MS;
   if (targetUtcMs - Date.now() <= 0) {
-    month += 1;
-    if (month > 12) { month = 1; year += 1; }
-    targetUtcMs = Date.UTC(year, month - 1, RUN_DAY_IST, RUN_HOUR_IST, 0, 0) - IST_OFFSET_MS;
+    targetUtcMs += 24 * 60 * 60 * 1000; // already past 9 AM today -> tomorrow
   }
-
   const delay = targetUtcMs - Date.now();
   return delay > 0 ? delay : 60 * 1000; // safety floor
 }
 
-// One-time override for the NEXT monthly run, set via BILLING_NEXT_OVERRIDE
-// (full ISO datetime). Used only for the first run after boot, then the
-// scheduler reverts to the normal 1st-of-month 09:00 IST cadence.
-let __monthlyOverrideConsumed = false;
+// Optional one-time override for the next run (testing), via BILLING_NEXT_OVERRIDE.
+let __overrideConsumed = false;
 function nextRunDelay() {
   const override = (process.env.BILLING_NEXT_OVERRIDE || '').trim();
-  if (override && !__monthlyOverrideConsumed) {
-    __monthlyOverrideConsumed = true;
+  if (override && !__overrideConsumed) {
+    __overrideConsumed = true;
     const parsed = Date.parse(override);
     const d = parsed - Date.now();
     if (!Number.isNaN(parsed) && d > 0) {
-      console.log('[billing] Using BILLING_NEXT_OVERRIDE for the next monthly run (one-time).');
+      console.log('[billing] Using BILLING_NEXT_OVERRIDE for the next run (one-time).');
       return d;
     }
     console.log(`[billing] BILLING_NEXT_OVERRIDE ignored (invalid or in the past): "${override}"`);
@@ -68,82 +56,27 @@ function nextRunDelay() {
 function scheduleNext() {
   const delay = nextRunDelay();
   const runAt = new Date(Date.now() + delay);
-  console.log(`[billing] Next monthly billing run scheduled for ${runAt.toISOString()} (UTC).`);
+  console.log(`[billing] Next daily billing check scheduled for ${runAt.toISOString()} (UTC).`);
 
-  // setTimeout caps at ~24.8 days, so chunk long waits.
-  const MAX = 2 ** 31 - 1;
-  if (delay > MAX) {
-    setTimeout(scheduleNext, MAX);
-    return;
-  }
+  const MAX = 2 ** 31 - 1; // setTimeout cap (~24.8 days)
+  if (delay > MAX) { setTimeout(scheduleNext, MAX); return; }
 
   setTimeout(async () => {
     try {
       await sendMonthlyBills({ trigger: 'scheduled' });
     } catch (err) {
-      console.error('[billing] Scheduled run failed:', err.message);
+      console.error('[billing] Daily run failed:', err.message);
     } finally {
-      scheduleNext(); // re-arm for the following month
+      scheduleNext(); // re-arm for the next day
     }
   }, delay);
-}
-
-// Optional one-off run controlled by the BILLING_ONE_OFF env var.
-// Accepts "YYYY-MM-DD" (runs at 09:00 IST that day) or a full ISO datetime.
-// Useful for verifying delivery on a specific date without waiting for the 1st.
-function msUntilOneOff() {
-  const raw = (process.env.BILLING_ONE_OFF || '').trim();
-  if (!raw) return null;
-  const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
-  let targetUtcMs;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-    const [y, m, d] = raw.split('-').map(Number);
-    targetUtcMs = Date.UTC(y, m - 1, d, RUN_HOUR_IST, 0, 0) - IST_OFFSET_MS;
-  } else {
-    const parsed = Date.parse(raw);
-    if (Number.isNaN(parsed)) {
-      console.error(`[billing] Ignoring invalid BILLING_ONE_OFF value: "${raw}"`);
-      return null;
-    }
-    targetUtcMs = parsed;
-  }
-  return targetUtcMs - Date.now();
-}
-
-function scheduleOneOff() {
-  const delay = msUntilOneOff();
-  if (delay == null) return;
-  if (delay <= 0) {
-    console.log('[billing] BILLING_ONE_OFF is in the past — skipping one-off run.');
-    return;
-  }
-  const runAt = new Date(Date.now() + delay);
-  console.log(`[billing] One-off billing run scheduled for ${runAt.toISOString()} (UTC).`);
-  const MAX = 2 ** 31 - 1;
-  const arm = (ms) => {
-    if (ms > MAX) { setTimeout(() => arm(ms - MAX), MAX); return; }
-    setTimeout(async () => {
-      try {
-        console.log('[billing] Running one-off (BILLING_ONE_OFF) billing now.');
-        await sendMonthlyBills({ trigger: 'scheduled' });
-      } catch (err) {
-        console.error('[billing] One-off run failed:', err.message);
-      }
-    }, ms);
-  };
-  arm(delay);
 }
 
 // Start the recurring schedule. Safe to call once at server boot.
 function startBillingScheduler() {
   if (global.__billingSchedulerStarted) return;
   global.__billingSchedulerStarted = true;
-
-  // Optional: fire once on a specific date set via BILLING_ONE_OFF.
-  scheduleOneOff();
-
-  // Reminders run automatically on the 2nd of every month at 09:00 IST.
-  // For an on-demand run, use POST /api/admin/billing/run from the admin app.
+  // Runs daily at 09:00 IST; billing.js decides which institutes are due today.
   scheduleNext();
 }
 

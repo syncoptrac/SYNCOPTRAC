@@ -29,12 +29,17 @@ function inr(n) {
   return Number(n || 0).toLocaleString('en-IN');
 }
 
-// Friendly due date = 7th of the billing month, formatted in IST.
-function dueDateLabel(date) {
+// Friendly due date = the institute's billing day of the billing month, in IST.
+// The day is clamped to the last day of the month for short months.
+function dueDateLabel(date, day) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: TZ, year: 'numeric', month: '2-digit',
   }).format(date || new Date()).split('-');
-  const due = new Date(Date.UTC(Number(parts[0]), Number(parts[1]) - 1, 7));
+  const year = Number(parts[0]);
+  const month = Number(parts[1]); // 1-12
+  const lastDay = new Date(year, month, 0).getDate();
+  const d = Math.min(Math.max(Number(day) || 1, 1), lastDay);
+  const due = new Date(Date.UTC(year, month - 1, d));
   return new Intl.DateTimeFormat('en-IN', {
     timeZone: 'UTC', day: 'numeric', month: 'long', year: 'numeric',
   }).format(due);
@@ -174,7 +179,6 @@ async function sendMonthlyBills(options) {
   const trigger = opts.trigger || 'scheduled';
   const now = opts.now || new Date();
   const { key: monthKey, label: monthLabel } = monthInfo(now);
-  const due = dueDateLabel(now);
 
   const summary = { monthKey, monthLabel, trigger, total: 0, sent: 0, skipped: 0, failed: 0, results: [] };
 
@@ -185,9 +189,24 @@ async function sendMonthlyBills(options) {
   }
 
   const institutes = await Institute.find({ isActive: true });
-  summary.total = institutes.length;
 
-  for (const inst of institutes) {
+  // Determine "today" in IST and this month's last calendar day.
+  const istYmd = new Intl.DateTimeFormat('en-CA', {
+    timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(now).split('-').map(Number); // [YYYY, MM, DD]
+  const todayDay = istYmd[2];
+  const lastDayOfMonth = new Date(istYmd[0], istYmd[1], 0).getDate();
+
+  // Bill only institutes whose configured billing day is today. Last-day safety:
+  // a day-29/30/31 institute still bills on the final day of a shorter month.
+  const dueInstitutes = institutes.filter((inst) => {
+    const day = Math.min(Math.max(Number(inst.billingDay) || 1, 1), 31);
+    return day === todayDay || (todayDay === lastDayOfMonth && day > lastDayOfMonth);
+  });
+
+  summary.total = dueInstitutes.length;
+
+  for (const inst of dueInstitutes) {
     // Idempotency guard: only a SUCCESSFUL prior send blocks a re-send.
     // A previous FAILED attempt should be retried, not skipped.
     const already = await BillingLog.findOne({ institute: inst._id, monthKey });
@@ -202,6 +221,8 @@ async function sendMonthlyBills(options) {
       continue;
     }
 
+    const instituteDay = Math.min(Math.max(Number(inst.billingDay) || 1, 1), 31);
+    const due = dueDateLabel(now, instituteDay);
     const { subject, html } = buildEmail(inst, monthLabel, due);
     try {
       await sendWithRetry({
