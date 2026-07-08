@@ -88,7 +88,7 @@ router.get('/dashboard', requireAdmin, async (req, res) => {
 // GET /api/admin/institutes
 router.get('/institutes', requireAdmin, async (req, res) => {
   try {
-    const institutes = await Institute.find().sort({ createdAt: -1 });
+    const institutes = await Institute.find().select('-password').sort({ createdAt: -1 });
     res.json(institutes);
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
@@ -175,7 +175,7 @@ router.put('/institutes/:id', requireAdmin, async (req, res) => {
       req.params.id,
       { ...updates, updatedAt: new Date() },
       { new: true }
-    );
+    ).select('-password');
     
     if (!institute) return res.status(404).json({ error: 'Institute not found' });
     res.json(institute);
@@ -191,7 +191,7 @@ router.patch('/institutes/:id', requireAdmin, async (req, res) => {
     const updates = {};
     allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
     updates.updatedAt = new Date();
-    const institute = await Institute.findByIdAndUpdate(req.params.id, updates, { new: true });
+    const institute = await Institute.findByIdAndUpdate(req.params.id, updates, { new: true }).select('-password');
     if (!institute) return res.status(404).json({ error: 'Institute not found' });
     res.json(institute);
   } catch (err) {

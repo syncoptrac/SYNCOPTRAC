@@ -67,6 +67,10 @@ export const setAuth = (token, user) => {
   Cookies.set('user', JSON.stringify(user), opts);
 };
 
+export const setStoredUser = (user) => {
+  Cookies.set('user', JSON.stringify(user), { expires: 7, path: '/', secure: true, sameSite: 'Lax' });
+};
+
 export const clearAuth = () => {
   const opts = { path: '/', secure: true, sameSite: 'Lax' };
   Cookies.remove('token', opts);
