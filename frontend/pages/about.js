@@ -38,6 +38,7 @@ const TOKENS = {
   gold:       { text: '#ffffff', bg: 'rgba(92,225,230,0.07)',  border: 'rgba(92,225,230,0.2)',  bar: '#5ce1e6' },
   red:        { text: '#c0392b', bg: 'rgba(220,38,38,0.05)',   border: 'rgba(220,38,38,0.15)',  bar: '#dc2626' },
   green:      { text: '#15803d', bg: 'rgba(22,163,74,0.06)',   border: 'rgba(22,163,74,0.18)',  bar: '#16a34a' },
+  blue:       { text: '#11245d', bg: 'rgba(17,36,93,0.06)',   border: 'rgba(17,36,93,0.18)',  bar: '#11245d' },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -485,7 +486,7 @@ export default function AboutPage() {
            ══════════════════════════════════════════════════════════════ */}
         <Section bg="#f9fafb" id="our-goal">
           <FadeUp>
-            <SectionLabel text="Our Goal" accent={TOKENS.gold} />
+            <SectionLabel text="Our Goal" accent={TOKENS.blue} />
           </FadeUp>
 
           <FadeUp delay={80}>
@@ -592,6 +593,50 @@ export default function AboutPage() {
             </Link>
           </FadeUp>
         </section>
+
+        {/* ══════════════════════════════════════════════════════════════
+            SECTION 9 - FROM THE FOUNDER
+           ══════════════════════════════════════════════════════════════ */}
+        <Section bg="#ffffff" id="from-the-founder">
+          <FadeUp>
+            <SectionLabel text="From the Founder" accent={TOKENS.gold} />
+            <SectionHeading>
+              Jenifar Alam
+            </SectionHeading>
+            <p className="text-sm font-semibold text-gray-500 mb-1">Founder &amp; CEO</p>
+          </FadeUp>
+
+          <FadeUp delay={80}>
+            <Card accent={TOKENS.gold}>
+              <div className="space-y-6">
+                <div>
+                  <p className="text-lg font-bold text-gray-900 mb-2">About</p>
+                  <p className="text-base leading-relaxed text-gray-600">
+                    Syncoptrac was built on a simple belief: technology should make work simpler, not more complicated. My goal is to create solutions that help education providers manage their daily operations through a platform that is intuitive, reliable, and easy to use.
+                  </p>
+                </div>
+                <div>
+                  <p className="text-lg font-bold text-gray-900 mb-2">Why I Started Syncoptrac</p>
+                  <p className="text-base leading-relaxed text-gray-600">
+                    Education providers manage countless responsibilities every day—from admissions and student records to attendance, communication, and fee management. I started Syncoptrac with the vision of bringing these essential operations together into one unified platform, helping institutions stay organised, save time, and work more efficiently through simplicity.
+                  </p>
+                </div>
+                <div>
+                  <p className="text-lg font-bold text-gray-900 mb-2">Vision</p>
+                  <p className="text-base leading-relaxed text-gray-600">
+                    My vision is for Syncoptrac to become the trusted operating and growth platform for education providers, empowering institutions with simple, reliable technology that supports their growth and helps them deliver better educational experiences.
+                  </p>
+                </div>
+                <div>
+                  <p className="text-lg font-bold text-gray-900 mb-2">Thank You</p>
+                  <p className="text-base leading-relaxed text-gray-600">
+                    Thank you for taking the time to learn about Syncoptrac. Your support and trust inspire us to keep building with purpose, and we look forward to being a part of your journey.
+                  </p>
+                </div>
+              </div>
+            </Card>
+          </FadeUp>
+        </Section>
 
       </main>
       <Footer />
