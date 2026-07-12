@@ -303,7 +303,7 @@ export default function AboutPage() {
         {/* ══════════════════════════════════════════════════════════════
             SECTION 4 — WHAT CHANGES
            ══════════════════════════════════════════════════════════════ */}
-        <Section bg="#000080" id="what-changes">
+        <Section bg="#f9fafb" id="what-changes">
           <FadeUp>
             <SectionLabel text="What Changes" accent={TOKENS.gold} />
             <SectionHeading>
@@ -352,7 +352,7 @@ export default function AboutPage() {
         {/* ══════════════════════════════════════════════════════════════
             SECTION 5 — OUR APPROACH
            ══════════════════════════════════════════════════════════════ */}
-        <Section bg="#fc9644" id="approach">
+        <Section bg="#fffdf5" id="approach">
           <FadeUp>
             <SectionLabel text="Our Approach" accent={TOKENS.gold} />
           </FadeUp>
@@ -391,7 +391,7 @@ export default function AboutPage() {
         {/* ══════════════════════════════════════════════════════════════
             SECTION 6 — HOW IT WORKS
            ══════════════════════════════════════════════════════════════ */}
-        <Section bg="#98FB98" id="how-it-works">
+        <Section bg="#f9fafb" id="how-it-works">
           <FadeUp>
             <SectionLabel text="How It Works" accent={TOKENS.gold} />
             <SectionHeading>
@@ -446,7 +446,7 @@ export default function AboutPage() {
         {/* ══════════════════════════════════════════════════════════════
             SECTION 7 — WHO IT IS FOR
            ══════════════════════════════════════════════════════════════ */}
-        <Section bg="#00008B" id="who-its-for">
+        <Section bg="#fffdf5" id="who-its-for">
           <FadeUp>
             <SectionLabel text="Who It Is For" accent={TOKENS.gold} />
             <SectionHeading>
@@ -597,7 +597,7 @@ export default function AboutPage() {
         {/* ══════════════════════════════════════════════════════════════
             SECTION 9 - FROM THE FOUNDER
            ══════════════════════════════════════════════════════════════ */}
-        <Section bg="#00008B" id="from-the-founder">
+        <Section bg="#ffffff" id="from-the-founder">
           <FadeUp>
             <SectionLabel text="From the Founder" accent={TOKENS.gold} />
             <SectionHeading>
