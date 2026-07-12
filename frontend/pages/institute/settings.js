@@ -16,6 +16,9 @@ export default function InstituteSettings() {
   const [savingPassword, setSavingPassword] = useState(false);
   const [showPw, setShowPw] = useState(false);
 
+  const [feeCycle, setFeeCycle] = useState('monthly');
+  const [savingCycle, setSavingCycle] = useState(false);
+
   useEffect(() => {
     const u = getUser();
     if (!u || u.role !== 'institute') { router.push('/institute/login'); return; }
@@ -28,6 +31,7 @@ export default function InstituteSettings() {
     try {
       const res = await api.get('/api/institute/profile');
       setProfile(res.data);
+      if (res.data?.feeCollectionCycle) setFeeCycle(res.data.feeCollectionCycle);
     } catch (e) {
       toast.error('Failed to load account details');
     } finally {
@@ -71,6 +75,27 @@ export default function InstituteSettings() {
       toast.error(err.response?.data?.error || 'Failed to update password');
     } finally {
       setSavingPassword(false);
+    }
+  };
+
+  const FEE_CYCLES = [
+    { value: 'monthly', label: 'Monthly', hint: 'Fees become due every month' },
+    { value: 'quarterly', label: 'Quarterly', hint: 'Fees become due every 3 months' },
+    { value: 'half-yearly', label: 'Half-Yearly', hint: 'Fees become due every 6 months' },
+    { value: 'yearly', label: 'Yearly', hint: 'Fees become due once every year' },
+  ];
+
+  const handleFeeCycleSave = async () => {
+    if (profile && feeCycle === profile.feeCollectionCycle) return;
+    setSavingCycle(true);
+    try {
+      const res = await api.patch('/api/institute/fee-cycle', { feeCollectionCycle: feeCycle });
+      setProfile((p) => ({ ...p, feeCollectionCycle: res.data.feeCollectionCycle }));
+      toast.success('Fee collection cycle updated');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to update fee collection cycle');
+    } finally {
+      setSavingCycle(false);
     }
   };
 
@@ -195,6 +220,59 @@ export default function InstituteSettings() {
               </button>
             </div>
           </form>
+        </section>
+
+        {/* Fee Collection Cycle */}
+        <section className="card">
+          <div className="flex items-center gap-3 mb-1">
+            <span className="w-1.5 h-5 rounded-full bg-brand-gold" />
+            <h2 className="text-lg font-bold text-brand-dark">Fee Collection Cycle</h2>
+          </div>
+          <p className="text-sm text-gray-500 mb-4 ml-4">
+            Choose how often your institute collects fees. Due dates, pending fees, status, and collection periods across the Fee System will follow this cycle automatically.
+          </p>
+          {loading ? (
+            <div className="animate-pulse space-y-3">
+              {[1, 2].map((i) => (
+                <div key={i} className="h-12 bg-gray-100 rounded-xl" />
+              ))}
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {FEE_CYCLES.map((c) => (
+                  <button
+                    key={c.value}
+                    type="button"
+                    onClick={() => setFeeCycle(c.value)}
+                    className={`text-left rounded-xl border px-4 py-3 transition-colors ${
+                      feeCycle === c.value
+                        ? 'border-brand-gold bg-brand-gold/5 ring-1 ring-brand-gold'
+                        : 'border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-semibold text-brand-dark">{c.label}</span>
+                      {feeCycle === c.value && (
+                        <span className="w-2 h-2 rounded-full bg-brand-gold" />
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">{c.hint}</p>
+                  </button>
+                ))}
+              </div>
+              <div className="flex justify-end mt-4">
+                <button
+                  type="button"
+                  onClick={handleFeeCycleSave}
+                  className="btn-primary"
+                  disabled={savingCycle || (profile && feeCycle === profile.feeCollectionCycle)}
+                >
+                  {savingCycle ? 'Saving...' : 'Save Fee Cycle'}
+                </button>
+              </div>
+            </>
+          )}
         </section>
 
       </div>

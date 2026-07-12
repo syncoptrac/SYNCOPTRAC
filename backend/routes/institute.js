@@ -116,4 +116,34 @@ router.patch('/change-password', requireInstitute, async (req, res) => {
   }
 });
 
+// PATCH /api/institute/fee-cycle - update the institute's own Fee Collection Cycle
+// This ONLY affects the institute's student Fee System (fees.js / Fees sheet).
+// It is independent per institute and does not touch admin-side SaaS billing.
+const VALID_CYCLES = ['monthly', 'quarterly', 'half-yearly', 'yearly'];
+
+router.patch('/fee-cycle', requireInstitute, async (req, res) => {
+  try {
+    const { feeCollectionCycle } = req.body;
+
+    if (!VALID_CYCLES.includes(feeCollectionCycle)) {
+      return res.status(400).json({ error: 'Invalid fee collection cycle' });
+    }
+
+    // Load ONLY the currently authenticated institute
+    const institute = await Institute.findById(req.user.id);
+    if (!institute) return res.status(404).json({ error: 'Institute not found' });
+
+    institute.feeCollectionCycle = feeCollectionCycle;
+    await institute.save();
+
+    return res.json({
+      message: 'Fee collection cycle updated successfully',
+      feeCollectionCycle: institute.feeCollectionCycle,
+    });
+  } catch (err) {
+    console.error('fee-cycle error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
 module.exports = router;

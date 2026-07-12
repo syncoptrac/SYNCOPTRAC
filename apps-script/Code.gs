@@ -90,7 +90,7 @@ function doGet(e) {
     switch (params.action) {
       case 'getStudents':         result = getStudents(); break;
       case 'getAttendance':       result = getAttendance(params.date, params.studentId); break;
-      case 'getFees':             result = getFees(); break;
+      case 'getFees':             result = getFees(params.cycle); break;
       case 'getEnquiries':        result = getEnquiries(); break;
       case 'getDashboardSummary': result = getDashboardSummary(); break;
       case 'getBatches':         result = getBatches(); break;
@@ -157,12 +157,69 @@ function todayISO() {
   return Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd');
 }
 
+// ─── FEE COLLECTION CYCLE HELPERS ──────────────────────────────
+// The institute's Fee Collection Cycle (set in Institute Settings, stored in
+// MongoDB) is forwarded by the backend as `cycle` on every fee-related call.
+// These helpers turn that cycle into month-interval math and human-readable
+// period labels, so due dates / periods / status stay in sync automatically.
+
+// How many months make up one billing cycle.
+function cycleMonths(cycle) {
+  switch (String(cycle || 'monthly').toLowerCase()) {
+    case 'quarterly':    return 3;
+    case 'half-yearly':  return 6;
+    case 'yearly':       return 12;
+    default:              return 1; // monthly
+  }
+}
+
+// Adds `months` calendar months to a YYYY-MM-DD string, clamping the day to
+// the last day of the resulting month (e.g. 31 Jan + 1 month -> 28/29 Feb).
+// Pure calendar math — no timezone conversion, so it can't drift by a day.
+function addMonthsISO(dateStr, months) {
+  var p = String(dateStr).split('-').map(Number);
+  var y = p[0], mIndex = (p[1] - 1) + months, d = p[2];
+  var newY = y + Math.floor(mIndex / 12);
+  var newM = ((mIndex % 12) + 12) % 12; // 0-11
+  var lastDayOfMonth = new Date(newY, newM + 1, 0).getDate();
+  var newD = Math.min(d, lastDayOfMonth);
+  return newY + '-' + String(newM + 1).padStart(2, '0') + '-' + String(newD).padStart(2, '0');
+}
+
+// Human-readable collection period label for a given due date + cycle.
+// monthly -> "July 2026" | quarterly -> "Q1 2026" | half-yearly -> "H1 2026" | yearly -> "2026"
+function periodLabel(dateStr, cycle) {
+  if (!dateStr) return '';
+  var p = String(dateStr).split('-').map(Number);
+  var y = p[0], m = p[1]; // month is 1-12
+  var c = String(cycle || 'monthly').toLowerCase();
+  if (c === 'quarterly')   return 'Q' + Math.ceil(m / 3) + ' ' + y;
+  if (c === 'half-yearly') return 'H' + (m <= 6 ? 1 : 2) + ' ' + y;
+  if (c === 'yearly')      return String(y);
+  var MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return MONTHS[m - 1] + ' ' + y;
+}
+
 // ─── SHEET HELPERS ────────────────────────────────────────────
 function getSheet(name) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(name);
   if (!sheet) sheet = createSheet(name);
+  // Self-heal: institutes that already have a Fees sheet from before the
+  // Fee Collection Cycle feature won't have a 'Period' column yet. Add it
+  // automatically instead of requiring anyone to manually edit the sheet.
+  if (name === SHEETS.FEES) ensureFeesPeriodColumn(sheet);
   return sheet;
+}
+
+function ensureFeesPeriodColumn(sheet) {
+  const lastCol = sheet.getLastColumn();
+  if (lastCol === 0) return; // brand new sheet, headers not written yet
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  if (headers.indexOf('Period') === -1) {
+    sheet.getRange(1, lastCol + 1).setValue('Period')
+      .setFontWeight('bold').setBackground('#1a73e8').setFontColor('#ffffff');
+  }
 }
 
 function createSheet(name) {
@@ -171,7 +228,7 @@ function createSheet(name) {
   const headers = {
     Students:   ['StudentID', 'StudentName', 'Phone', 'ParentContact', 'Course', 'JoiningDate', 'Email', 'Address'],
     Attendance: ['AttendanceID', 'StudentID', 'StudentName', 'Date', 'Status'],
-    Fees:       ['StudentID', 'StudentName', 'Course', 'TotalFee', 'PaidAmount', 'PendingAmount', 'DueDate', 'LastPaymentDate', 'Status'],
+    Fees:       ['StudentID', 'StudentName', 'Course', 'TotalFee', 'PaidAmount', 'PendingAmount', 'DueDate', 'LastPaymentDate', 'Status', 'Period'],
     Enquiries:  ['EnquiryID', 'Name', 'Phone', 'Email', 'Course', 'Status', 'Notes', 'CreatedAt', 'FollowUpDate'],
     Batches:    ['BatchID', 'BatchName', 'Course', 'Teacher', 'Description', 'Students'],
     Schedule:   ['SlotID', 'BatchID', 'Day', 'StartTime', 'EndTime', 'Subject']
@@ -255,7 +312,7 @@ function addStudent(body) {
     body.email || '',
     body.address || ''
   ]);
-  addFeeRecord(studentId, body.studentName, body.course, body.totalFee || 0);
+  addFeeRecord(studentId, body.studentName, body.course, body.totalFee || 0, body.cycle);
   return { success: true, studentId, message: 'Student added successfully' };
 }
 
@@ -338,12 +395,24 @@ function markAttendance(body) {
 }
 
 // ─── FEES ─────────────────────────────────────────────────────
-function getFees() {
-  return { success: true, data: sheetToObjects(getSheet(SHEETS.FEES)) };
+// `cycle` (monthly/quarterly/half-yearly/yearly) comes from the institute's
+// Fee Collection Cycle setting and drives due dates, periods, and status.
+function getFees(cycle) {
+  const data = sheetToObjects(getSheet(SHEETS.FEES));
+  // Backfill a Period label on the fly for rows saved before this column
+  // existed, or that otherwise came back blank — display-only, not persisted,
+  // so it never triggers a write on a simple read.
+  data.forEach(f => {
+    if (!f.Period) f.Period = periodLabel(f.DueDate || todayISO(), cycle);
+  });
+  return { success: true, data };
 }
 
-function addFeeRecord(studentId, studentName, course, totalFee) {
-  getSheet(SHEETS.FEES).appendRow([studentId, studentName, course, totalFee, 0, totalFee, '', '', 'Pending']);
+function addFeeRecord(studentId, studentName, course, totalFee, cycle) {
+  const months = cycleMonths(cycle);
+  const dueDate = addMonthsISO(todayISO(), months);
+  const period = periodLabel(dueDate, cycle);
+  getSheet(SHEETS.FEES).appendRow([studentId, studentName, course, totalFee, 0, totalFee, dueDate, '', 'Pending', period]);
 }
 
 function updateFees(body) {
@@ -354,16 +423,42 @@ function updateFees(body) {
   const totalFee = parseFloat(body.totalFee) || 0;
   const paidAmount = parseFloat(body.paidAmount) || 0;
   const pendingAmount = totalFee - paidAmount;
-  const status = pendingAmount <= 0 ? 'Paid'
-    : (body.dueDate && body.dueDate < todayISO() ? 'Overdue' : 'Pending');
+  const cycle = body.cycle || 'monthly';
+  const months = cycleMonths(cycle);
+
+  let dueDate, status;
+
+  if (pendingAmount <= 0) {
+    // Fully paid — automatically roll the due date forward to the next
+    // collection cycle (e.g. quarterly institute: paying this quarter's
+    // fee sets the next due date 3 months out), per the selected cycle.
+    const base = body.lastPaymentDate || todayISO();
+    dueDate = addMonthsISO(base, months);
+    status = 'Paid';
+  } else {
+    // Still pending: honour an explicit due date from the Edit Fee form.
+    // Otherwise, keep the record's existing due date if it already has one,
+    // and only auto-calculate a fresh one (from today, per the cycle) when
+    // there truly isn't one yet — so a genuine future date is never
+    // silently overwritten.
+    let existingDueDate = '';
+    const dueCol = headers.indexOf('DueDate');
+    if (dueCol !== -1) existingDueDate = toISO(sheet.getRange(rowIndex, dueCol + 1).getValue());
+    dueDate = body.dueDate || existingDueDate || addMonthsISO(todayISO(), months);
+    status = (dueDate && dueDate < todayISO()) ? 'Overdue' : 'Pending';
+  }
+
+  const period = periodLabel(dueDate, cycle);
+
   const updates = {
     TotalFee: totalFee, PaidAmount: paidAmount, PendingAmount: pendingAmount,
-    DueDate: body.dueDate || '', LastPaymentDate: body.lastPaymentDate || '', Status: status
+    DueDate: dueDate || '', LastPaymentDate: body.lastPaymentDate || '', Status: status,
+    Period: period
   };
   headers.forEach((h, i) => {
     if (updates[h] !== undefined) sheet.getRange(rowIndex, i + 1).setValue(updates[h]);
   });
-  return { success: true, message: 'Fee updated', status };
+  return { success: true, message: 'Fee updated', status, dueDate, period };
 }
 
 // ─── ENQUIRIES ────────────────────────────────────────────────

@@ -30,6 +30,16 @@ const instituteSchema = new mongoose.Schema({
   
   // Student range (from get-started form)
   numberOfStudents: { type: String },
+
+  // Fee Collection Cycle — controls how the Institute's own student fee
+  // module (Fees sheet / fees.js) calculates due dates, periods, and status.
+  // Independent per institute. Does NOT affect the admin-side SaaS billing
+  // (planAmount/billingDay above), which stays monthly regardless.
+  feeCollectionCycle: {
+    type: String,
+    enum: ['monthly', 'quarterly', 'half-yearly', 'yearly'],
+    default: 'monthly'
+  },
   
   // Status
   isActive: { type: Boolean, default: true },

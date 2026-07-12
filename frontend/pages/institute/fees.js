@@ -15,10 +15,18 @@ const fmtDate = (val) => {
   return `${day} ${month} ${year}`;
 };
 
+const CYCLE_LABELS = {
+  monthly: 'Monthly',
+  quarterly: 'Quarterly',
+  'half-yearly': 'Half-Yearly',
+  yearly: 'Yearly',
+};
+
 export default function FeesPage() {
   const [fees, setFees] = useState([]);
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [feeCycle, setFeeCycle] = useState('monthly');
   const [showModal, setShowModal] = useState(false);
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [selected, setSelected] = useState(null);
@@ -57,6 +65,7 @@ export default function FeesPage() {
       );
       setFees(activeFees);
       setStudents(activeStudents);
+      if (feesRes.data.feeCollectionCycle) setFeeCycle(feesRes.data.feeCollectionCycle);
     } catch { toast.error('Failed to load fees'); }
     finally { setLoading(false); }
   };
@@ -160,8 +169,11 @@ export default function FeesPage() {
       </div>
 
       {/* Filters + bulk button */}
-      <div className="flex flex-wrap gap-2 justify-between mb-4">
-        <div className="flex gap-2 flex-wrap">
+      <div className="flex flex-wrap gap-2 justify-between items-center mb-4">
+        <div className="flex gap-2 flex-wrap items-center">
+          <span className="text-xs px-3 py-1.5 rounded-lg bg-brand-dark/5 text-brand-dark font-medium">
+            Cycle: {CYCLE_LABELS[feeCycle] || 'Monthly'}
+          </span>
           {[['all','All'],['overdue','Overdue'],['paid','Paid']].map(([v, l]) => (
             <button key={v} onClick={() => setFilter(v)}
               className={`text-sm px-4 py-1.5 rounded-lg font-medium transition-colors ${
@@ -188,7 +200,7 @@ export default function FeesPage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
-                  {['Student Name','Course','Fee Amount','Paid Amount','Last Payment Date','Next Due Date','Status','Actions'].map(h => (
+                  {['Student Name','Course','Fee Amount','Paid Amount','Last Payment Date','Next Due Date','Collection Period','Status','Actions'].map(h => (
                     <th key={h} className="text-left text-gray-500 font-medium px-4 py-3 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -202,6 +214,7 @@ export default function FeesPage() {
                     <td className="px-4 py-3 text-green-600 font-medium">₹{fmt(f.PaidAmount)}</td>
                     <td className="px-4 py-3 text-gray-500 text-xs">{fmtDate(f.LastPaymentDate)}</td>
                     <td className="px-4 py-3 text-gray-500 text-xs">{fmtDate(f.DueDate)}</td>
+                    <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{f.Period || '—'}</td>
                     <td className="px-4 py-3">
                       <span className={
                         f.Status === 'Paid' ? 'badge-green' :
@@ -223,7 +236,7 @@ export default function FeesPage() {
                   </tr>
                 ))}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={8} className="px-4 py-12 text-center text-gray-400">
+                  <tr><td colSpan={9} className="px-4 py-12 text-center text-gray-400">
                     No records for this filter
                   </td></tr>
                 )}

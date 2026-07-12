@@ -2,6 +2,20 @@ const express = require('express');
 const router = express.Router();
 const fetch = require('node-fetch');
 const { requireInstitute } = require('../middleware/auth');
+const Institute = require('../models/Institute');
+
+// Fee Collection Cycle isn't stored in the JWT (it can change anytime without
+// forcing re-login), so fee-related routes below fetch it fresh from Mongo
+// and forward it to Apps Script as `cycle` so due dates/periods/status stay
+// in sync with whatever the institute has selected in Settings.
+async function getFeeCycle(instituteId) {
+  try {
+    const inst = await Institute.findById(instituteId).select('feeCollectionCycle');
+    return (inst && inst.feeCollectionCycle) || 'monthly';
+  } catch {
+    return 'monthly';
+  }
+}
 
 // ─── IN-MEMORY CACHE ─────────────────────────────────────────────────────────
 const cache = new Map();
@@ -91,7 +105,8 @@ router.get('/students', requireInstitute, async (req, res) => {
 router.post('/students', requireInstitute, async (req, res) => {
   try {
     const { appsScriptUrl, id } = req.user;
-    const data = await proxyToAppsScript(appsScriptUrl, 'POST', { action: 'addStudent', ...req.body });
+    const cycle = await getFeeCycle(id);
+    const data = await proxyToAppsScript(appsScriptUrl, 'POST', { action: 'addStudent', cycle, ...req.body });
     bustCache(id);
     res.json(data);
   } catch (err) {
@@ -165,8 +180,11 @@ router.post('/attendance', requireInstitute, async (req, res) => {
 router.get('/fees', requireInstitute, async (req, res) => {
   try {
     const { appsScriptUrl, id } = req.user;
-    const data = await cachedGet(`${id}:fees`, `${appsScriptUrl}?action=getFees`);
-    res.json(data);
+    const cycle = await getFeeCycle(id);
+    // Cache key includes the cycle so a settings change is reflected immediately
+    // instead of serving a stale 30s-cached response computed under the old cycle.
+    const data = await cachedGet(`${id}:fees:${cycle}`, `${appsScriptUrl}?action=getFees&cycle=${cycle}`);
+    res.json({ ...data, feeCollectionCycle: cycle });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch fees' });
@@ -176,8 +194,9 @@ router.get('/fees', requireInstitute, async (req, res) => {
 router.put('/fees/:studentId', requireInstitute, async (req, res) => {
   try {
     const { appsScriptUrl, id } = req.user;
+    const cycle = await getFeeCycle(id);
     const data = await proxyToAppsScript(appsScriptUrl, 'POST', {
-      action: 'updateFees', studentId: req.params.studentId, ...req.body
+      action: 'updateFees', studentId: req.params.studentId, cycle, ...req.body
     });
     bustCache(id);
     res.json(data);
