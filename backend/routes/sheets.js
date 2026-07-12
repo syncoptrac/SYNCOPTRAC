@@ -269,7 +269,11 @@ router.post('/send-email', requireInstitute, async (req, res) => {
 router.get('/dashboard-summary', requireInstitute, async (req, res) => {
   try {
     const { appsScriptUrl, id } = req.user;
-    const data = await cachedGet(`${id}:dashboard`, `${appsScriptUrl}?action=getDashboardSummary`);
+    const cycle = await getFeeCycle(id);
+    // Cache key includes the cycle (and, implicitly via the 30s TTL, today's
+    // date) so a fee status that just rolled over from Paid to Unpaid is
+    // reflected here within the normal cache window, not stuck stale.
+    const data = await cachedGet(`${id}:dashboard:${cycle}`, `${appsScriptUrl}?action=getDashboardSummary&cycle=${cycle}`);
     res.json(data);
   } catch (err) {
     console.error(err);

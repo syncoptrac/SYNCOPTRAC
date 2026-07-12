@@ -92,7 +92,7 @@ function doGet(e) {
       case 'getAttendance':       result = getAttendance(params.date, params.studentId); break;
       case 'getFees':             result = getFees(params.cycle); break;
       case 'getEnquiries':        result = getEnquiries(); break;
-      case 'getDashboardSummary': result = getDashboardSummary(); break;
+      case 'getDashboardSummary': result = getDashboardSummary(params.cycle); break;
       case 'getBatches':         result = getBatches(); break;
       case 'getSchedule':         result = getSchedule(); break;
       default: result = { error: 'Unknown action' };
@@ -414,17 +414,56 @@ function markAttendance(body) {
 // before any payment) rather than a shared calendar month/quarter — so the
 // due date and Period label are always "start + cycle months", independent
 // per student.
-function getFees(cycle) {
+//
+// STATUS IS NEVER TRUSTED FROM THE SHEET. A row saved as "Paid" only
+// reflects the cycle that was active when it was saved — if the next due
+// date has since arrived with no new payment recorded, that "Paid" is
+// stale. computeEffectiveFeeRows() recomputes Status (and PaidAmount /
+// PendingAmount) fresh on every read from three facts only: LastPaymentDate,
+// DueDate, and today's date — exactly as specified. Nothing is written back
+// to the sheet by a read; the stored row only changes when a real payment
+// is recorded via updateFees().
+function computeEffectiveFeeRows(cycle) {
   const months = cycleMonths(cycle);
-  const data = sheetToObjects(getSheet(SHEETS.FEES));
-  // Backfill CycleStart/Period on the fly for rows saved before these
-  // columns existed — display-only, not persisted, so a plain read never
-  // triggers a write. Estimate a start one cycle-length before the due date.
-  data.forEach(f => {
-    if (!f.CycleStart && f.DueDate) f.CycleStart = addMonthsISO(f.DueDate, -months);
-    if (!f.Period) f.Period = periodLabel(f.CycleStart, f.DueDate || todayISO());
+  const today = todayISO();
+  const raw = sheetToObjects(getSheet(SHEETS.FEES));
+
+  return raw.map(f => {
+    const totalFee = parseFloat(f.TotalFee) || 0;
+    const paidAmount = parseFloat(f.PaidAmount) || 0;
+    const storedPending = parseFloat(f.PendingAmount);
+    const pendingAmount = isNaN(storedPending) ? (totalFee - paidAmount) : storedPending;
+    const dueDate = f.DueDate || '';
+
+    // The stored row shows fully paid, but if today is on/after the due
+    // date that was set for the NEXT cycle, no payment has been recorded
+    // for that new cycle yet — the fee is due again, in full.
+    const rolledOver = pendingAmount <= 0 && dueDate && dueDate <= today;
+
+    const effectivePaid = rolledOver ? 0 : paidAmount;
+    const effectivePending = rolledOver ? totalFee : pendingAmount;
+
+    let status;
+    if (effectivePending <= 0) status = 'Paid';
+    else if (dueDate && dueDate < today) status = 'Overdue';
+    else status = 'Pending';
+
+    // Backfill Period/CycleStart on the fly for rows saved before these
+    // columns existed — display-only, never persisted by a read.
+    const cycleStart = f.CycleStart || (dueDate ? addMonthsISO(dueDate, -months) : '');
+
+    return Object.assign({}, f, {
+      PaidAmount: effectivePaid,
+      PendingAmount: effectivePending,
+      Status: status,
+      CycleStart: cycleStart,
+      Period: f.Period || periodLabel(cycleStart, dueDate || today),
+    });
   });
-  return { success: true, data };
+}
+
+function getFees(cycle) {
+  return { success: true, data: computeEffectiveFeeRows(cycle) };
 }
 
 function addFeeRecord(studentId, studentName, course, totalFee, cycle) {
@@ -568,9 +607,12 @@ function sendEmail(body) {
 }
 
 // ─── DASHBOARD SUMMARY ────────────────────────────────────────
-function getDashboardSummary() {
+function getDashboardSummary(cycle) {
   const students   = sheetToObjects(getSheet(SHEETS.STUDENTS));
-  const fees       = sheetToObjects(getSheet(SHEETS.FEES));
+  // Same dynamic Status/PaidAmount/PendingAmount as the Fees page — a
+  // student who rolled into an unpaid new cycle is counted as unpaid here
+  // too, without needing a separate write to "reset" the sheet.
+  const fees       = computeEffectiveFeeRows(cycle);
   const enquiries  = sheetToObjects(getSheet(SHEETS.ENQUIRIES));
   const attendance = sheetToObjects(getSheet(SHEETS.ATTENDANCE));
 
