@@ -186,18 +186,26 @@ function addMonthsISO(dateStr, months) {
   return newY + '-' + String(newM + 1).padStart(2, '0') + '-' + String(newD).padStart(2, '0');
 }
 
-// Human-readable collection period label for a given due date + cycle.
-// monthly -> "July 2026" | quarterly -> "Q1 2026" | half-yearly -> "H1 2026" | yearly -> "2026"
-function periodLabel(dateStr, cycle) {
+// Human-readable collection period for a student's OWN cycle window — not a
+// fixed calendar month/quarter. Each student's cycle starts on their last
+// successful payment date (or enrollment date, before any payment) and runs
+// to their due date, e.g. "15 Feb 2026 – 15 May 2026". This is what makes
+// every student's cycle genuinely independent instead of forcing everyone
+// into shared calendar buckets like "Q1 2026".
+function fmtShortDate(dateStr, withYear) {
   if (!dateStr) return '';
   var p = String(dateStr).split('-').map(Number);
-  var y = p[0], m = p[1]; // month is 1-12
-  var c = String(cycle || 'monthly').toLowerCase();
-  if (c === 'quarterly')   return 'Q' + Math.ceil(m / 3) + ' ' + y;
-  if (c === 'half-yearly') return 'H' + (m <= 6 ? 1 : 2) + ' ' + y;
-  if (c === 'yearly')      return String(y);
-  var MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-  return MONTHS[m - 1] + ' ' + y;
+  var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return p[2] + ' ' + MONTHS[p[1] - 1] + (withYear ? ' ' + p[0] : '');
+}
+
+function periodLabel(startDateStr, dueDateStr) {
+  if (!dueDateStr) return '';
+  if (!startDateStr) return fmtShortDate(dueDateStr, true);
+  var startYear = String(startDateStr).split('-')[0];
+  var dueYear = String(dueDateStr).split('-')[0];
+  var sameYear = startYear === dueYear;
+  return fmtShortDate(startDateStr, !sameYear) + ' \u2013 ' + fmtShortDate(dueDateStr, true);
 }
 
 // ─── SHEET HELPERS ────────────────────────────────────────────
@@ -206,20 +214,25 @@ function getSheet(name) {
   let sheet = ss.getSheetByName(name);
   if (!sheet) sheet = createSheet(name);
   // Self-heal: institutes that already have a Fees sheet from before the
-  // Fee Collection Cycle feature won't have a 'Period' column yet. Add it
-  // automatically instead of requiring anyone to manually edit the sheet.
-  if (name === SHEETS.FEES) ensureFeesPeriodColumn(sheet);
+  // Fee Collection Cycle feature won't have the 'Period'/'CycleStart'
+  // columns yet. Add them automatically instead of requiring anyone to
+  // manually edit the sheet.
+  if (name === SHEETS.FEES) ensureFeesCycleColumns(sheet);
   return sheet;
 }
 
-function ensureFeesPeriodColumn(sheet) {
+function ensureFeesCycleColumns(sheet) {
   const lastCol = sheet.getLastColumn();
   if (lastCol === 0) return; // brand new sheet, headers not written yet
-  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-  if (headers.indexOf('Period') === -1) {
-    sheet.getRange(1, lastCol + 1).setValue('Period')
-      .setFontWeight('bold').setBackground('#1a73e8').setFontColor('#ffffff');
-  }
+  let headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  ['Period', 'CycleStart'].forEach((col) => {
+    if (headers.indexOf(col) === -1) {
+      const newCol = sheet.getLastColumn() + 1;
+      sheet.getRange(1, newCol).setValue(col)
+        .setFontWeight('bold').setBackground('#1a73e8').setFontColor('#ffffff');
+      headers = sheet.getRange(1, 1, 1, newCol).getValues()[0];
+    }
+  });
 }
 
 function createSheet(name) {
@@ -228,7 +241,7 @@ function createSheet(name) {
   const headers = {
     Students:   ['StudentID', 'StudentName', 'Phone', 'ParentContact', 'Course', 'JoiningDate', 'Email', 'Address'],
     Attendance: ['AttendanceID', 'StudentID', 'StudentName', 'Date', 'Status'],
-    Fees:       ['StudentID', 'StudentName', 'Course', 'TotalFee', 'PaidAmount', 'PendingAmount', 'DueDate', 'LastPaymentDate', 'Status', 'Period'],
+    Fees:       ['StudentID', 'StudentName', 'Course', 'TotalFee', 'PaidAmount', 'PendingAmount', 'DueDate', 'LastPaymentDate', 'Status', 'Period', 'CycleStart'],
     Enquiries:  ['EnquiryID', 'Name', 'Phone', 'Email', 'Course', 'Status', 'Notes', 'CreatedAt', 'FollowUpDate'],
     Batches:    ['BatchID', 'BatchName', 'Course', 'Teacher', 'Description', 'Students'],
     Schedule:   ['SlotID', 'BatchID', 'Day', 'StartTime', 'EndTime', 'Subject']
@@ -263,7 +276,7 @@ function generateId(prefix) {
 // expressed as UTC), which makes the frontend display one day behind.
 // We convert all Date objects to clean YYYY-MM-DD strings in IST right here,
 // so the frontend always receives a plain date string and never has to guess.
-var DATE_COLS = ['Date','JoiningDate','DueDate','LastPaymentDate','CreatedAt','FollowUpDate'];
+var DATE_COLS = ['Date','JoiningDate','DueDate','LastPaymentDate','CreatedAt','FollowUpDate','CycleStart'];
 
 function sheetToObjects(sheet) {
   var data = sheet.getDataRange().getValues();
@@ -396,23 +409,32 @@ function markAttendance(body) {
 
 // ─── FEES ─────────────────────────────────────────────────────
 // `cycle` (monthly/quarterly/half-yearly/yearly) comes from the institute's
-// Fee Collection Cycle setting and drives due dates, periods, and status.
+// Fee Collection Cycle setting. Each student's cycle is anchored to their
+// OWN CycleStart (their last successful payment date, or enrollment date
+// before any payment) rather than a shared calendar month/quarter — so the
+// due date and Period label are always "start + cycle months", independent
+// per student.
 function getFees(cycle) {
+  const months = cycleMonths(cycle);
   const data = sheetToObjects(getSheet(SHEETS.FEES));
-  // Backfill a Period label on the fly for rows saved before this column
-  // existed, or that otherwise came back blank — display-only, not persisted,
-  // so it never triggers a write on a simple read.
+  // Backfill CycleStart/Period on the fly for rows saved before these
+  // columns existed — display-only, not persisted, so a plain read never
+  // triggers a write. Estimate a start one cycle-length before the due date.
   data.forEach(f => {
-    if (!f.Period) f.Period = periodLabel(f.DueDate || todayISO(), cycle);
+    if (!f.CycleStart && f.DueDate) f.CycleStart = addMonthsISO(f.DueDate, -months);
+    if (!f.Period) f.Period = periodLabel(f.CycleStart, f.DueDate || todayISO());
   });
   return { success: true, data };
 }
 
 function addFeeRecord(studentId, studentName, course, totalFee, cycle) {
   const months = cycleMonths(cycle);
-  const dueDate = addMonthsISO(todayISO(), months);
-  const period = periodLabel(dueDate, cycle);
-  getSheet(SHEETS.FEES).appendRow([studentId, studentName, course, totalFee, 0, totalFee, dueDate, '', 'Pending', period]);
+  // No payment has happened yet — the first cycle is anchored to today
+  // (enrollment), same as before.
+  const cycleStart = todayISO();
+  const dueDate = addMonthsISO(cycleStart, months);
+  const period = periodLabel(cycleStart, dueDate);
+  getSheet(SHEETS.FEES).appendRow([studentId, studentName, course, totalFee, 0, totalFee, dueDate, '', 'Pending', period, cycleStart]);
 }
 
 function updateFees(body) {
@@ -426,34 +448,41 @@ function updateFees(body) {
   const cycle = body.cycle || 'monthly';
   const months = cycleMonths(cycle);
 
-  let dueDate, status;
+  const readCol = (colName) => {
+    const i = headers.indexOf(colName);
+    return i === -1 ? '' : toISO(sheet.getRange(rowIndex, i + 1).getValue());
+  };
+
+  let dueDate, cycleStart, status;
 
   if (pendingAmount <= 0) {
-    // Fully paid — automatically roll the due date forward to the next
-    // collection cycle (e.g. quarterly institute: paying this quarter's
-    // fee sets the next due date 3 months out), per the selected cycle.
-    const base = body.lastPaymentDate || todayISO();
-    dueDate = addMonthsISO(base, months);
+    // Fully paid — this IS a successful payment, so it becomes the new
+    // CycleStart, and the next due date is exactly "this payment date +
+    // cycle months" (e.g. quarterly: pay 15 Feb -> next due 15 May; pay
+    // again 15 May -> next due 15 Aug). Genuinely independent per student.
+    cycleStart = body.lastPaymentDate || todayISO();
+    dueDate = addMonthsISO(cycleStart, months);
     status = 'Paid';
   } else {
     // Still pending: honour an explicit due date from the Edit Fee form.
     // Otherwise, keep the record's existing due date if it already has one,
     // and only auto-calculate a fresh one (from today, per the cycle) when
     // there truly isn't one yet — so a genuine future date is never
-    // silently overwritten.
-    let existingDueDate = '';
-    const dueCol = headers.indexOf('DueDate');
-    if (dueCol !== -1) existingDueDate = toISO(sheet.getRange(rowIndex, dueCol + 1).getValue());
+    // silently overwritten. CycleStart follows the same "keep unless there
+    // truly isn't one" rule, estimated from the due date as a last resort.
+    const existingDueDate = readCol('DueDate');
+    const existingCycleStart = readCol('CycleStart');
     dueDate = body.dueDate || existingDueDate || addMonthsISO(todayISO(), months);
+    cycleStart = existingCycleStart || (existingDueDate ? addMonthsISO(existingDueDate, -months) : todayISO());
     status = (dueDate && dueDate < todayISO()) ? 'Overdue' : 'Pending';
   }
 
-  const period = periodLabel(dueDate, cycle);
+  const period = periodLabel(cycleStart, dueDate);
 
   const updates = {
     TotalFee: totalFee, PaidAmount: paidAmount, PendingAmount: pendingAmount,
     DueDate: dueDate || '', LastPaymentDate: body.lastPaymentDate || '', Status: status,
-    Period: period
+    Period: period, CycleStart: cycleStart || ''
   };
   headers.forEach((h, i) => {
     if (updates[h] !== undefined) sheet.getRange(rowIndex, i + 1).setValue(updates[h]);

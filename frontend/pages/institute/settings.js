@@ -229,7 +229,7 @@ export default function InstituteSettings() {
             <h2 className="text-lg font-bold text-brand-dark">Fee Collection Cycle</h2>
           </div>
           <p className="text-sm text-gray-500 mb-4 ml-4">
-            Choose how often your institute collects fees. Due dates, pending fees, status, and collection periods across the Fee System will follow this cycle automatically.
+            Choose how often your institute collects fees. Each student&apos;s next due date is calculated from their own last successful payment date — not a shared calendar month or quarter — so due dates, pending fees, status, and collection periods stay independent per student.
           </p>
           {loading ? (
             <div className="animate-pulse space-y-3">
