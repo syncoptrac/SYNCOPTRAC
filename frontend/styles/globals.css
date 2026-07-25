@@ -164,3 +164,23 @@ html.lenis {
     transform: none;
   }
 }
+
+/* ── App shell (Institute / Admin dashboard layouts) ───────────────────────────
+   Fixes the bottom nav requiring a scroll to see on mobile. 100vh measures
+   the viewport INCLUDING the browser's address-bar area even when it's
+   collapsed, so the page was taller than what was actually visible. 100dvh
+   tracks the real visible area and updates live as the address bar
+   shows/hides. The 100vh line stays as a fallback for older browsers that
+   don't understand dvh — they simply ignore the line below it. ─────────────── */
+html, body {
+  height: 100%;
+  height: -webkit-fill-available;
+}
+html {
+  height: -webkit-fill-available;
+}
+.app-shell {
+  height: 100vh;
+  height: 100dvh;
+  min-height: -webkit-fill-available;
+}

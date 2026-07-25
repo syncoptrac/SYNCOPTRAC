@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { clearAuth, getUser, handleDisplaced } from '../../lib/api';
@@ -32,6 +32,42 @@ export default function InstituteLayout({ children, title }) {
   const router = useRouter();
   const user = getUser();
 
+  // ── Apple Dock-style magnification for the bottom tab bar ─────────
+  // Icons scale up as the cursor nears them, with a smooth falloff to
+  // neighbors — pure refs + rAF, no new dependency, no re-renders, and it
+  // never fires on touch, so tapping on mobile is untouched.
+  const dockIconRefs = useRef([]);
+  const dockRafRef = useRef(null);
+  const DOCK_RADIUS = 90;
+  const DOCK_MAX_SCALE = 1.4;
+
+  const handleDockMove = (e) => {
+    const clientX = e.clientX;
+    if (dockRafRef.current) return;
+    dockRafRef.current = requestAnimationFrame(() => {
+      dockRafRef.current = null;
+      dockIconRefs.current.forEach((el) => {
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        const center = rect.left + rect.width / 2;
+        const dist = Math.abs(clientX - center);
+        const t = Math.max(0, 1 - dist / DOCK_RADIUS);
+        const scale = 1 + (DOCK_MAX_SCALE - 1) * t * t; // ease-out falloff
+        const lift = (scale - 1) * 12;
+        el.style.transform = `translateY(${-lift}px) scale(${scale})`;
+        if (el.parentElement) el.parentElement.style.zIndex = scale > 1.05 ? 5 : 1;
+      });
+    });
+  };
+
+  const handleDockLeave = () => {
+    dockIconRefs.current.forEach((el) => {
+      if (!el) return;
+      el.style.transform = 'translateY(0px) scale(1)';
+      if (el.parentElement) el.parentElement.style.zIndex = 1;
+    });
+  };
+
   const logout = () => {
     clearAuth();
     try { sessionStorage.clear(); } catch {}
@@ -62,11 +98,9 @@ export default function InstituteLayout({ children, title }) {
   }, []);
 
   return (
-    <div style={{
+    <div className="app-shell" style={{
       display: 'flex',
       flexDirection: 'column',
-      height: '100vh',
-      minHeight: '-webkit-fill-available',
       background: '#f0f4ff',
       overflow: 'hidden',
     }}>
@@ -136,7 +170,10 @@ export default function InstituteLayout({ children, title }) {
       </main>
 
       {/* ── Bottom Tab Bar — always visible, never needs scrolling ─── */}
-      <nav style={{
+      <nav
+        onMouseMove={handleDockMove}
+        onMouseLeave={handleDockLeave}
+        style={{
         flexShrink: 0,
         background: 'rgba(10,18,58,0.97)',
         backdropFilter: 'blur(20px) saturate(180%)',
@@ -146,7 +183,7 @@ export default function InstituteLayout({ children, title }) {
         display: 'flex',
         paddingBottom: 'env(safe-area-inset-bottom, 0px)',
       }}>
-        {NAV.map(item => {
+        {NAV.map((item, i) => {
           const active = router.pathname === item.href;
           return (
             <Link key={item.href} href={item.href} style={{
@@ -164,11 +201,16 @@ export default function InstituteLayout({ children, title }) {
                   background: 'linear-gradient(90deg, #5ce1e6, #d4af37)',
                 }} />
               )}
-              <span style={{
-                lineHeight: 1,
-                filter: active ? 'drop-shadow(0 0 6px rgba(92,225,230,0.6))' : 'none',
-                transition: 'filter 0.2s ease',
-              }}>
+              <span
+                ref={(el) => (dockIconRefs.current[i] = el)}
+                style={{
+                  lineHeight: 1,
+                  filter: active ? 'drop-shadow(0 0 6px rgba(92,225,230,0.6))' : 'none',
+                  transition: 'filter 0.2s ease, transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+                  transformOrigin: 'center bottom',
+                  willChange: 'transform',
+                }}
+              >
                 {item.icon}
               </span>
               <span style={{
@@ -193,7 +235,15 @@ export default function InstituteLayout({ children, title }) {
           onMouseEnter={e => e.currentTarget.style.color = '#f87171'}
           onMouseLeave={e => e.currentTarget.style.color = 'rgba(248,113,113,0.55)'}
         >
-          <span style={{ lineHeight: 1 }}>
+          <span
+            ref={(el) => (dockIconRefs.current[NAV.length] = el)}
+            style={{
+              lineHeight: 1,
+              transition: 'transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+              transformOrigin: 'center bottom',
+              willChange: 'transform',
+            }}
+          >
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
           </span>
           <span style={{ fontSize: '9px', fontWeight: 500 }}>Logout</span>
@@ -207,6 +257,13 @@ export default function InstituteLayout({ children, title }) {
         }
         html {
           height: -webkit-fill-available;
+        }
+        .app-shell {
+          height: 100vh;
+          height: 100dvh; /* real visible viewport on mobile — 100vh includes the
+            address-bar area, which pushed the bottom nav below the fold until
+            the page was scrolled. 100dvh tracks what's actually visible. */
+          min-height: -webkit-fill-available;
         }
       `}</style>
     </div>
