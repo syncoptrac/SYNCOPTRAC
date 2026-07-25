@@ -106,8 +106,9 @@ export default function InstituteLayout({ children, title }) {
     }}>
 
       {/* ── Top Header ─────────────────────────────────────────────── */}
-      <header style={{
+      <header className="noise-overlay" style={{
         flexShrink: 0,
+        position: 'relative',
         background: 'linear-gradient(135deg, #0a1844 0%, #11245d 100%)',
         borderBottom: '1px solid rgba(92,225,230,0.12)',
         boxShadow: '0 2px 16px rgba(0,0,0,0.2)',
@@ -173,8 +174,10 @@ export default function InstituteLayout({ children, title }) {
       <nav
         onMouseMove={handleDockMove}
         onMouseLeave={handleDockLeave}
+        className="noise-overlay"
         style={{
         flexShrink: 0,
+        position: 'relative',
         background: 'rgba(10,18,58,0.97)',
         backdropFilter: 'blur(20px) saturate(180%)',
         WebkitBackdropFilter: 'blur(20px) saturate(180%)',

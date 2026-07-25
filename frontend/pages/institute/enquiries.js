@@ -177,8 +177,8 @@ export default function EnquiriesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {filtered.map(e => (
-                  <tr key={e.EnquiryID} className="hover:bg-gray-50">
+                {filtered.map((e, i) => (
+                  <tr key={e.EnquiryID} className="hover:bg-gray-50 stagger-row-fade" style={{ '--i': i }}>
                     <td className="px-4 py-3 font-medium text-gray-900">{e.Name}</td>
                     <td className="px-4 py-3 text-gray-600">{e.Phone}</td>
                     <td className="px-4 py-3 text-gray-500 text-xs">{e.Email || '—'}</td>

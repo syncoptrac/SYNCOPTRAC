@@ -111,8 +111,8 @@ export default function StudentsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {filtered.map(s => (
-                  <tr key={s.StudentID} className="hover:bg-gray-50">
+                {filtered.map((s, i) => (
+                  <tr key={s.StudentID} className="hover:bg-gray-50 stagger-row-fade" style={{ '--i': i }}>
                     <td className="px-4 py-3">
                       <code className="text-xs bg-gray-100 px-2 py-0.5 rounded">{s.StudentID}</code>
                     </td>

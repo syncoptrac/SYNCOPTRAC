@@ -328,7 +328,8 @@ export default function BatchesPage() {
                 const batchSlots = slots.filter(s => String(s.BatchID) === String(b.BatchID));
 
                 return (
-                  <div key={b.BatchID} style={{
+                  <div key={b.BatchID} className="stagger-row" style={{
+                    '--i': i,
                     background: 'white', borderRadius: 16,
                     border: '1px solid #e5e7eb',
                     boxShadow: '0 1px 4px rgba(0,0,0,0.05)',

@@ -206,8 +206,8 @@ export default function FeesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {filtered.map(f => (
-                  <tr key={f.StudentID} className={f.Status === 'Overdue' ? 'bg-red-50/30' : ''}>
+                {filtered.map((f, i) => (
+                  <tr key={f.StudentID} className={`stagger-row-fade ${f.Status === 'Overdue' ? 'bg-red-50/30' : ''}`} style={{ '--i': i }}>
                     <td className="px-4 py-3 font-medium text-gray-900">{f.StudentName}</td>
                     <td className="px-4 py-3 text-gray-500">{f.Course}</td>
                     <td className="px-4 py-3 text-gray-700">₹{fmt(f.TotalFee)}</td>

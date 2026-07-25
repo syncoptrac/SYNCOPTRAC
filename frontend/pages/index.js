@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { useRef, useEffect } from 'react';
 import Navbar from '../components/layout/Navbar';
 import Footer from '../components/layout/Footer';
 import AnimatedHero from '../components/ui/AnimatedHero';
@@ -31,9 +32,20 @@ const howItWorks = [
 ];
 
 function ValueCard({ icon, title, desc, delay }) {
+  const cardRef = useRef(null);
+  const handleMove = (e) => {
+    const el = cardRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    el.style.setProperty('--mx', ((e.clientX - rect.left) / rect.width) * 100 + '%');
+    el.style.setProperty('--my', ((e.clientY - rect.top) / rect.height) * 100 + '%');
+  };
   return (
     <FadeUp delay={delay}>
       <div
+        ref={cardRef}
+        onMouseMove={handleMove}
+        className="spotlight-card"
         style={{
           background: 'white',
           borderRadius: '18px',
@@ -56,6 +68,7 @@ function ValueCard({ icon, title, desc, delay }) {
           e.currentTarget.style.transform = 'translateY(0)';
         }}
       >
+        <div className="spotlight-glow" />
         <div style={{
           position: 'absolute', top: 0, left: 0, right: 0, height: '2px',
           background: 'linear-gradient(90deg, transparent, rgba(92,225,230,0.45), transparent)',
@@ -72,6 +85,42 @@ function ValueCard({ icon, title, desc, delay }) {
 }
 
 export default function HomePage() {
+  // ── "How It Works" timeline — glowing line fills as you scroll through the
+  // section, instead of sitting there as a static gradient. Classic scroll-
+  // storytelling trick, driven by a lightweight rAF-throttled scroll listener.
+  const timelineWrapRef = useRef(null);
+  const timelineFillRef = useRef(null);
+  const timelineRafRef = useRef(null);
+
+  useEffect(() => {
+    const updateFill = () => {
+      timelineRafRef.current = null;
+      const wrap = timelineWrapRef.current;
+      const fill = timelineFillRef.current;
+      if (!wrap || !fill) return;
+      const rect = wrap.getBoundingClientRect();
+      const vh = window.innerHeight;
+      const start = vh * 0.85;   // line starts filling once section is 85% down the viewport
+      const end = vh * 0.35;     // fully filled once section bottom nears 35% up
+      const total = rect.height + (start - end);
+      const traveled = start - rect.top;
+      const progress = Math.max(0, Math.min(1, total > 0 ? traveled / total : 0));
+      fill.style.height = (progress * 100) + '%';
+    };
+    const onScroll = () => {
+      if (timelineRafRef.current) return;
+      timelineRafRef.current = requestAnimationFrame(updateFill);
+    };
+    updateFill();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+      if (timelineRafRef.current) cancelAnimationFrame(timelineRafRef.current);
+    };
+  }, []);
+
   return (
     <div className="min-h-screen flex flex-col" style={{ overflowX: 'hidden' }}>
       <Navbar />
@@ -138,7 +187,7 @@ export default function HomePage() {
             </p>
           </FadeUp>
 
-          <div className="mt-16 relative">
+          <div className="mt-16 relative" ref={timelineWrapRef}>
             <FadeIn>
               <div className="hidden md:block absolute left-1/2 top-0 bottom-0" style={{
                 width: '1px',
@@ -146,6 +195,14 @@ export default function HomePage() {
                 transform: 'translateX(-50%)',
               }} />
             </FadeIn>
+            <div className="hidden md:block absolute left-1/2 top-0" ref={timelineFillRef} style={{
+              width: '3px', height: '0%',
+              transform: 'translateX(-50%)',
+              background: 'linear-gradient(180deg, #5ce1e6, #d4af37)',
+              boxShadow: '0 0 14px rgba(92,225,230,0.55)',
+              borderRadius: '2px',
+              transition: 'height 0.08s linear',
+            }} />
 
             <div className="space-y-10 md:space-y-0">
               {howItWorks.map((s, i) => (
@@ -211,7 +268,7 @@ export default function HomePage() {
 
       {/* CTA */}
       <section
-        className="py-24 px-4 text-center relative overflow-hidden"
+        className="py-24 px-4 text-center relative overflow-hidden noise-overlay"
         style={{
           background: 'linear-gradient(160deg, #0a1844 0%, #11245d 45%, #172d74 75%, #0a1844 100%)',
         }}

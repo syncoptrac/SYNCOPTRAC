@@ -306,7 +306,7 @@ export default function AttendancePage() {
                     </td></tr>
                   ) : history.length > 0 ? (
                     history.map((r, i) => (
-                      <tr key={i} className={String(r.Status).toLowerCase() === 'absent' ? 'bg-red-50/30' : ''}>
+                      <tr key={i} className={`stagger-row-fade ${String(r.Status).toLowerCase() === 'absent' ? 'bg-red-50/30' : ''}`} style={{ '--i': i }}>
                         <td className="px-4 py-3 font-medium text-gray-900">{r.StudentName}</td>
                         <td className="px-4 py-3 text-gray-500">{fmtDate(r.Date)}</td>
                         <td className="px-4 py-3 text-center">

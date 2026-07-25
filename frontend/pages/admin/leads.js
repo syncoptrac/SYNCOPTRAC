@@ -108,10 +108,10 @@ export default function AdminLeads() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {leads.map(lead => {
+                {leads.map((lead, i) => {
                   const st = statusStyle(lead.status);
                   return (
-                    <tr key={lead._id} className="hover:bg-gray-50">
+                    <tr key={lead._id} className="hover:bg-gray-50 stagger-row-fade" style={{ '--i': i }}>
                       <td className="px-4 py-3">
                         <p className="font-medium text-gray-900">{lead.instituteName}</p>
                         {lead.message && (

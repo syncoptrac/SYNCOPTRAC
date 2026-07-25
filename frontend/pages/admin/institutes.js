@@ -237,8 +237,8 @@ export default function AdminInstitutes() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {filtered.map(inst => (
-                  <tr key={inst._id} className="hover:bg-gray-50">
+                {filtered.map((inst, i) => (
+                  <tr key={inst._id} className="hover:bg-gray-50 stagger-row-fade" style={{ '--i': i }}>
                     <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">{inst.instituteName}</td>
                     <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{inst.ownerName}</td>
                     <td className="px-4 py-3"><code className="bg-gray-100 px-2 py-0.5 rounded text-xs">{inst.loginId}</code></td>

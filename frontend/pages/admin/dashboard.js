@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import AdminLayout from '../../components/layout/AdminLayout';
+import CountUp from '../../components/ui/CountUp';
 import api, { getUser } from '../../lib/api';
 
 /* Design tokens */
@@ -107,17 +108,17 @@ export default function AdminDashboard() {
   const todayLabel = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
   const kpis = [
-    { label: 'Active Institutes', value: fmt(stats?.activeInstitutes), accent: '#5ce1e6',
+    { label: 'Active Institutes', value: fmt(stats?.activeInstitutes), raw: stats?.activeInstitutes, accent: '#5ce1e6',
       icon: <><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-3"/></> },
-    { label: 'Total Institutes', value: fmt(stats?.totalInstitutes), accent: '#1a73e8',
+    { label: 'Total Institutes', value: fmt(stats?.totalInstitutes), raw: stats?.totalInstitutes, accent: '#1a73e8',
       icon: <><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></> },
-    { label: 'New Requests', value: fmt(stats?.newLeads), accent: '#7c3aed',
+    { label: 'New Requests', value: fmt(stats?.newLeads), raw: stats?.newLeads, accent: '#7c3aed',
       icon: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></> },
-    { label: "This Month's Overdue", value: '₹' + fmt(stats?.overduePayments), accent: '#dc2626',
+    { label: "This Month's Overdue", value: '₹' + fmt(stats?.overduePayments), raw: stats?.overduePayments, prefix: '₹', accent: '#dc2626',
       icon: <><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></> },
-    { label: 'Lifetime Revenue', value: '₹' + fmt(stats?.totalRevenue), accent: '#059669',
+    { label: 'Lifetime Revenue', value: '₹' + fmt(stats?.totalRevenue), raw: stats?.totalRevenue, prefix: '₹', accent: '#059669',
       icon: <><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></> },
-    { label: 'New This Month', value: fmt(stats?.newInstitutesThisMonth), accent: '#0ea5e9',
+    { label: 'New This Month', value: fmt(stats?.newInstitutesThisMonth), raw: stats?.newInstitutesThisMonth, accent: '#0ea5e9',
       icon: <><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09zM12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/></> },
   ];
 
@@ -166,7 +167,7 @@ export default function AdminDashboard() {
         )}
 
         {/* Hero */}
-        <section className="hero">
+        <section className="hero noise-overlay">
           <div className="hero-glow" />
           <div className="hero-row">
             <div>
@@ -176,8 +177,8 @@ export default function AdminDashboard() {
             </div>
             <div className="hero-rev">
               <p className="hero-rev-l">Lifetime Revenue</p>
-              <p className="hero-rev-v">₹{fmt(stats?.totalRevenue)}</p>
-              <p className="hero-rev-s">{fmt(stats?.activeInstitutes)} active institutes</p>
+              <p className="hero-rev-v">₹<CountUp value={stats?.totalRevenue || 0} /></p>
+              <p className="hero-rev-s"><CountUp value={stats?.activeInstitutes || 0} /> active institutes</p>
             </div>
           </div>
         </section>
@@ -192,7 +193,9 @@ export default function AdminDashboard() {
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={k.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{k.icon}</svg>
                 </div>
               </div>
-              <p className="kpi-val">{k.value}</p>
+              <p className="kpi-val">
+                {typeof k.raw === 'number' ? <CountUp value={k.raw} prefix={k.prefix || ''} /> : k.value}
+              </p>
               <p className="kpi-lab">{k.label}</p>
             </article>
           ))}
@@ -226,7 +229,9 @@ export default function AdminDashboard() {
               )}
             </div>
           </div>
-          <p className="rev-value">{monthLoading ? '…' : '₹' + fmt(monthRevenue?.revenue ?? stats?.monthlyRevenue)}</p>
+          <p className="rev-value">
+            {monthLoading ? '…' : <>₹<CountUp value={monthRevenue?.revenue ?? stats?.monthlyRevenue ?? 0} /></>}
+          </p>
           <p className="rev-sub">
             {monthRevenue ? `${monthRevenue.paidCount ?? 0} paid institute${(monthRevenue.paidCount ?? 0) !== 1 ? 's' : ''} in ${selectedLabel}` : `Revenue for ${selectedLabel}`}
           </p>

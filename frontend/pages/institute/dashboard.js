@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import InstituteLayout from '../../components/layout/InstituteLayout';
+import CountUp from '../../components/ui/CountUp';
 import api, { getUser } from '../../lib/api';
 
 /* Design tokens */
@@ -80,13 +81,13 @@ export default function InstituteDashboard() {
   const CIRC = 2 * Math.PI * R;
 
   const kpis = [
-    { label: 'Total Students', value: fmt(totalStudents), accent: '#1a73e8',
+    { label: 'Total Students', value: fmt(totalStudents), raw: totalStudents, accent: '#1a73e8',
       icon: <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/> },
-    { label: 'Present Today', value: fmt(presentToday), accent: '#059669', sub: markedToday > 0 ? attendanceRate + '% attendance' : 'Not marked yet',
+    { label: 'Present Today', value: fmt(presentToday), raw: presentToday, accent: '#059669', sub: markedToday > 0 ? attendanceRate + '% attendance' : 'Not marked yet',
       icon: <><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></> },
-    { label: 'Absent Today', value: fmt(absentToday), accent: '#dc2626',
+    { label: 'Absent Today', value: fmt(absentToday), raw: absentToday, accent: '#dc2626',
       icon: <><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></> },
-    { label: 'Overdue Fees', value: '₹' + fmt(pendingFees), accent: '#d97706', sub: overdueStudents + (overdueStudents === 1 ? ' student overdue' : ' students overdue'),
+    { label: 'Overdue Fees', value: '₹' + fmt(pendingFees), raw: pendingFees, prefix: '₹', accent: '#d97706', sub: overdueStudents + (overdueStudents === 1 ? ' student overdue' : ' students overdue'),
       icon: <><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></> },
   ];
 
@@ -131,7 +132,7 @@ export default function InstituteDashboard() {
       <div className="dash">
 
         {/* Greeting hero */}
-        <section className="hero">
+        <section className="hero noise-overlay">
           <div className="hero-glow" />
           <div className="hero-row">
             <div>
@@ -147,7 +148,7 @@ export default function InstituteDashboard() {
                   transform="rotate(-90 40 40)" style={ringTrans} />
               </svg>
               <div className="ring-c">
-                <span className="ring-v">{attendanceRate}%</span>
+                <span className="ring-v"><CountUp value={attendanceRate} suffix="%" /></span>
                 <span className="ring-l">Present</span>
               </div>
             </div>
@@ -162,7 +163,9 @@ export default function InstituteDashboard() {
               <div className="kpi-ico">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={k.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{k.icon}</svg>
               </div>
-              <p className="kpi-val">{k.value}</p>
+              <p className="kpi-val">
+                {typeof k.raw === 'number' ? <CountUp value={k.raw} prefix={k.prefix || ''} /> : k.value}
+              </p>
               <p className="kpi-lab">{k.label}</p>
               {k.sub && <p className="kpi-sub">{k.sub}</p>}
             </article>
@@ -179,15 +182,15 @@ export default function InstituteDashboard() {
             </header>
             <div className="collect-top">
               <div>
-                <p className="big">₹{fmt(collectedFees)}</p>
+                <p className="big">₹<CountUp value={collectedFees} /></p>
                 <p className="muted">collected of ₹{fmt(totalFees)}</p>
               </div>
-              <span className="pct">{collectRate}%</span>
+              <span className="pct"><CountUp value={collectRate} suffix="%" /></span>
             </div>
             <div className="track"><span className="fill" style={wpct(collectRate)} /></div>
             <div className="fee-rows">
-              <div className="fee-row"><span className="dot" style={bg('#059669')} />Paid<b>₹{fmt(collectedFees)}</b></div>
-              <div className="fee-row"><span className="dot" style={bg('#dc2626')} />Overdue Students<b>{overdueStudents}</b></div>
+              <div className="fee-row"><span className="dot" style={bg('#059669')} />Paid<b>₹<CountUp value={collectedFees} /></b></div>
+              <div className="fee-row"><span className="dot" style={bg('#dc2626')} />Overdue Students<b><CountUp value={overdueStudents} /></b></div>
             </div>
           </article>
 
@@ -207,7 +210,7 @@ export default function InstituteDashboard() {
                 <div key={p.label} className="pipe-row">
                   <span className="dot" style={bg(p.color)} />
                   <span className="pipe-l">{p.label}</span>
-                  <b>{p.value}</b>
+                  <b><CountUp value={p.value} /></b>
                 </div>
               ))}
             </div>
