@@ -228,7 +228,7 @@ function periodLabel(startDateStr, dueDateStr) {
 }
 
 // ─── SHEET HELPERS ────────────────────────────────────────────
-// ─── PERFORMANCE LAYER ────────────────────────────────────────
+// ─── PERFORMANCE LAYER ─────────────────────────────────────────
 // Every SpreadsheetApp call is a remote round trip (roughly 50-300ms each).
 // The original code paid that cost once PER CELL on updates and once PER ROW
 // on bulk operations, which is why saving attendance for a class could take
@@ -248,7 +248,7 @@ function ss_() {
 // One getValues() per sheet per execution, reused by every helper below.
 function sheetData_(sheet) {
   var key = sheet.getSheetId();
-  if (!__dataMemo[key]) __dataMemo[key] = sheetData_(sheet);
+  if (!__dataMemo[key]) __dataMemo[key] = sheet.getDataRange().getValues();
   return __dataMemo[key];
 }
 
@@ -296,7 +296,7 @@ function cachedRead_(key, producer) {
     }
   }
   var fresh = producer();
-  // Never cache failures, or an error would stick for the whole TTL.
+  // Never cache failures, or an error would stick around for the whole TTL.
   if (fresh && !fresh.error && fresh.success !== false) {
     try {
       var payload = JSON.stringify(fresh);
@@ -304,7 +304,7 @@ function cachedRead_(key, producer) {
       // skip the cache instead of throwing.
       if (payload.length < 100000) c.put(full, payload, READ_CACHE_TTL);
     } catch (e) {
-      // Not cacheable - ignore, correctness is unaffected.
+      // Value not serialisable/cacheable - ignore, correctness is unaffected.
     }
   }
   return fresh;

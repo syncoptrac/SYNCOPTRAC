@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { clearAuth, getUser, handleDisplaced } from '../../lib/api';
-import api from '../../lib/api';
+import api, { prefetch } from '../../lib/api';
 
 const NAV = [
   { href: '/institute/dashboard', label: 'Home', icon: (
@@ -27,6 +27,35 @@ const NAV = [
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
   )},
 ];
+
+// PERF: what each tab needs the moment it opens. Warming these in the
+// background means tab switches paint from cache instead of waiting on a
+// 1-3s Apps Script + Sheets read. Purely additive - no endpoint, route or
+// auth behaviour changes, and every call is a plain GET the page would have
+// made anyway a moment later.
+const WARM = {
+  '/institute/dashboard':  ['/api/sheets/dashboard-summary'],
+  '/institute/students':   ['/api/sheets/students'],
+  '/institute/attendance': ['/api/sheets/students'],
+  '/institute/fees':       ['/api/sheets/fees', '/api/sheets/students'],
+  '/institute/enquiries':  ['/api/sheets/enquiries'],
+  '/institute/batches':    ['/api/sheets/batches', '/api/sheets/schedule', '/api/sheets/students'],
+};
+
+// Don't re-warm the same endpoint on every navigation.
+const WARM_THROTTLE_MS = 45 * 1000;
+const lastWarm = new Map();
+
+const warmUrl = (url) => {
+  const previous = lastWarm.get(url) || 0;
+  if (Date.now() - previous < WARM_THROTTLE_MS) return;
+  lastWarm.set(url, Date.now());
+  prefetch(url);
+};
+
+// Fires on hover (desktop) and on touch-down (mobile), which buys 100-300ms
+// of head start before the tap even registers as a navigation.
+const warmFor = (href) => (WARM[href] || []).forEach(warmUrl);
 
 export default function InstituteLayout({ children, title }) {
   const router = useRouter();
@@ -96,6 +125,34 @@ export default function InstituteLayout({ children, title }) {
     const timer = setInterval(checkSession, 4000);
     return () => { alive = false; clearInterval(timer); };
   }, []);
+
+  // PERF: once the current page has finished loading, quietly fetch what the
+  // other tabs will need. Staggered and one-at-a-time on purpose: Google
+  // throttles concurrent executions of a single Apps Script project, so a
+  // parallel burst would make the visible page slower, not faster.
+  useEffect(() => {
+    let cancelled = false;
+
+    const queue = [];
+    Object.keys(WARM).forEach((href) => {
+      if (href === router.pathname) return; // the page is already loading its own data
+      WARM[href].forEach((url) => {
+        if (!queue.includes(url)) queue.push(url);
+      });
+    });
+
+    const run = async () => {
+      for (const url of queue) {
+        if (cancelled) return;
+        warmUrl(url);
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    };
+
+    // 1.2s delay keeps the warm-up off the critical path of the current page.
+    const start = setTimeout(run, 1200);
+    return () => { cancelled = true; clearTimeout(start); };
+  }, [router.pathname]);
 
   return (
     <div className="app-shell" style={{
@@ -189,7 +246,12 @@ export default function InstituteLayout({ children, title }) {
         {NAV.map((item, i) => {
           const active = router.pathname === item.href;
           return (
-            <Link key={item.href} href={item.href} style={{
+            <Link
+              key={item.href}
+              href={item.href}
+              onMouseEnter={() => warmFor(item.href)}
+              onTouchStart={() => warmFor(item.href)}
+              style={{
               flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
               justifyContent: 'center', gap: 3, padding: '10px 2px 9px',
               textDecoration: 'none',
