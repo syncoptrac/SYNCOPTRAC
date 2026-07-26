@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import InstituteLayout from '../../components/layout/InstituteLayout';
-import api, { getUser } from '../../lib/api';
+import api, { getUser, prefetch } from '../../lib/api';
 import toast from 'react-hot-toast';
 
 const fmtDate = (val) => {
@@ -39,6 +39,9 @@ export default function AttendancePage() {
     const user = getUser();
     if (!user || user.role !== 'institute') { router.push('/institute/login'); return; }
     fetchStudents();
+    // PERF: warm today's records in the background so opening the History tab
+    // is instant instead of triggering a fresh Sheets read on click.
+    prefetch(`/api/sheets/attendance?date=${getTodayIST()}`);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -63,7 +66,8 @@ export default function AttendancePage() {
 
   const fetchHistory = useCallback(async () => {
     setHistLoading(true);
-    setHistory([]);
+    // PERF/UX: keep the previous rows visible while reloading instead of
+    // blanking the table, which read as "slow" even when it wasn't.
     try {
       const res = await api.get(`/api/sheets/attendance?date=${histDate}`);
       const data = res.data.data || [];

@@ -8,6 +8,28 @@ const Admin = require('../models/Admin');
 const BillingLog = require('../models/BillingLog');
 const { sendMonthlyBills } = require('../services/billing');
 
+// ─── SHORT-LIVED AGGREGATE CACHE ─────────────────────────────────────────────
+// PERF: the admin dashboard recomputed the same totals from a full collection
+// scan on every load, and the page also requests the whole institute list in
+// parallel - two scans per visit. Results are memoised briefly, and ANY admin
+// write clears the cache immediately, so the UI never shows stale data after a
+// change.
+const adminCache = new Map();
+const ADMIN_CACHE_TTL = 15 * 1000;
+
+async function memo(key, producer) {
+  const hit = adminCache.get(key);
+  if (hit && Date.now() - hit.ts < ADMIN_CACHE_TTL) return hit.value;
+  const value = await producer();
+  adminCache.set(key, { value, ts: Date.now() });
+  return value;
+}
+
+router.use((req, res, next) => {
+  if (req.method !== 'GET') adminCache.clear();
+  next();
+});
+
 // Generate unique login ID
 function generateLoginId(instituteName) {
   const prefix = instituteName.replace(/\s+/g, '').substring(0, 4).toUpperCase();
@@ -35,10 +57,11 @@ router.get('/revenue', requireAdmin, async (req, res) => {
       start = new Date(now.getFullYear(), now.getMonth(), 1);
       end   = new Date(now.getFullYear(), now.getMonth() + 1, 1);
     }
+    // PERF: .lean() skips Mongoose document hydration - plain objects only.
     const institutes = await Institute.find({
       paymentStatus: 'paid',
       updatedAt: { $gte: start, $lt: end },
-    }, 'planAmount');
+    }, 'planAmount').lean();
     const revenue = institutes.reduce((s, i) => s + (i.planAmount || 0), 0);
     res.json({ revenue, paidCount: institutes.length, month });
   } catch (err) {
@@ -52,13 +75,15 @@ router.get('/dashboard', requireAdmin, async (req, res) => {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const [totalInstitutes, activeInstitutes, institutes, newLeads, newInstitutesThisMonth] = await Promise.all([
-      Institute.countDocuments(),
-      Institute.countDocuments({ isActive: true }),
-      Institute.find({}, 'planAmount paymentStatus createdAt'),
-      Lead.countDocuments({ status: 'new' }),
-      Institute.countDocuments({ createdAt: { $gte: startOfMonth } })
-    ]);
+    const [totalInstitutes, activeInstitutes, institutes, newLeads, newInstitutesThisMonth] =
+      await memo('dashboard', () => Promise.all([
+        Institute.countDocuments(),
+        Institute.countDocuments({ isActive: true }),
+        // PERF: .lean() avoids hydrating every institute into a Mongoose doc.
+        Institute.find({}, 'planAmount paymentStatus createdAt').lean(),
+        Lead.countDocuments({ status: 'new' }),
+        Institute.countDocuments({ createdAt: { $gte: startOfMonth } })
+      ]));
 
     const monthlyRevenue = institutes
       .filter(i => i.paymentStatus === 'paid')
@@ -88,7 +113,9 @@ router.get('/dashboard', requireAdmin, async (req, res) => {
 // GET /api/admin/institutes
 router.get('/institutes', requireAdmin, async (req, res) => {
   try {
-    const institutes = await Institute.find().select('-password').sort({ createdAt: -1 });
+    const institutes = await memo('institutes', () =>
+      Institute.find().select('-password').sort({ createdAt: -1 }).lean()
+    );
     res.json(institutes);
   } catch (err) {
     res.status(500).json({ error: 'Server error' });

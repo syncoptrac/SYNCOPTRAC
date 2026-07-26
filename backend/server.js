@@ -49,6 +49,37 @@ app.use(cors({
 app.use(express.json({ limit: '10kb' })); // prevent huge payload attacks
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
+// ─── Response compression ─────────────────────────────────────────────────────
+// PERF: student/fee/attendance lists are large JSON payloads that were sent
+// uncompressed - slow on mobile data. gzip typically cuts them by ~80%.
+// Implemented with Node's built-in zlib so no new dependency is introduced.
+const zlib = require('zlib');
+app.use((req, res, next) => {
+  if (!/\bgzip\b/i.test(String(req.headers['accept-encoding'] || ''))) return next();
+  const sendJson = res.json.bind(res);
+  res.json = (body) => {
+    let payload;
+    try {
+      payload = JSON.stringify(body);
+    } catch {
+      return sendJson(body);
+    }
+    // Below ~1KB, compression costs more than it saves.
+    if (!payload || Buffer.byteLength(payload) < 1024) return sendJson(body);
+    zlib.gzip(payload, (err, buf) => {
+      if (err) return sendJson(body);
+      if (res.headersSent) return;
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Content-Encoding', 'gzip');
+      res.setHeader('Vary', 'Accept-Encoding');
+      res.removeHeader('Content-Length');
+      res.end(buf);
+    });
+    return res;
+  };
+  next();
+});
+
 // ─── Sanitize MongoDB operators in req.body / req.query / req.params ──────────
 // Prevents NoSQL injection: { "$gt": "" } attacks
 app.use(mongoSanitize());

@@ -86,6 +86,25 @@ Best regards,<br>
 function doGet(e) {
   const params = e.parameter;
   try {
+    // PERF: identical read requests inside READ_CACHE_TTL are answered from
+    // CacheService (~10ms) instead of re-reading the spreadsheet (~1-3s).
+    // Any write bumps the version counter, so this can never serve stale data
+    // after a save.
+    const cacheKey = [
+      params.action || '',
+      params.cycle || '',
+      params.date || '',
+      params.studentId || ''
+    ].join('|');
+    return jsonResponse(cachedRead_(cacheKey, function () {
+      return computeGet_(params);
+    }));
+  } catch (err) {
+    return jsonResponse({ error: err.message });
+  }
+}
+
+function computeGet_(params) {
     let result;
     switch (params.action) {
       case 'getStudents':         result = getStudents(); break;
@@ -97,10 +116,7 @@ function doGet(e) {
       case 'getSchedule':         result = getSchedule(); break;
       default: result = { error: 'Unknown action' };
     }
-    return jsonResponse(result);
-  } catch (err) {
-    return jsonResponse({ error: err.message });
-  }
+    return result;
 }
 
 function doPost(e) {
@@ -125,6 +141,9 @@ function doPost(e) {
       case 'deleteSlot':     result = deleteSlot(body.slotId); break;
       default: result = { error: 'Unknown action' };
     }
+    // One bump invalidates every cached read, so the next page load sees the
+    // change immediately.
+    if (result && !result.error && result.success !== false) bumpDataVersion_();
     return jsonResponse(result);
   } catch (err) {
     return jsonResponse({ error: err.message });
@@ -209,8 +228,135 @@ function periodLabel(startDateStr, dueDateStr) {
 }
 
 // ─── SHEET HELPERS ────────────────────────────────────────────
+// ─── PERFORMANCE LAYER ────────────────────────────────────────
+// Every SpreadsheetApp call is a remote round trip (roughly 50-300ms each).
+// The original code paid that cost once PER CELL on updates and once PER ROW
+// on bulk operations, which is why saving attendance for a class could take
+// tens of seconds. These helpers collapse each operation into a single read
+// and a single write, and cache read results between requests so repeat page
+// loads don't touch the spreadsheet at all.
+
+var __ssMemo = null;
+var __sheetMemo = {};
+var __dataMemo = {};
+
+function ss_() {
+  if (!__ssMemo) __ssMemo = SpreadsheetApp.getActiveSpreadsheet();
+  return __ssMemo;
+}
+
+// One getValues() per sheet per execution, reused by every helper below.
+function sheetData_(sheet) {
+  var key = sheet.getSheetId();
+  if (!__dataMemo[key]) __dataMemo[key] = sheetData_(sheet);
+  return __dataMemo[key];
+}
+
+function invalidateSheetData_(sheet) {
+  delete __dataMemo[sheet.getSheetId()];
+}
+
+// ── Cross-request read cache ─────────────────────────────────────
+// CacheService reads take ~5-15ms versus 1-3s for a full spreadsheet read.
+var READ_CACHE_TTL = 90; // seconds
+var CACHE_VERSION_KEY = 'dataVersion';
+
+function cache_() {
+  return CacheService.getScriptCache();
+}
+
+// A single version counter is bumped on every write and forms part of every
+// read key, so one bump invalidates all cached reads at once. (CacheService
+// cannot enumerate or wildcard-delete keys, so this is the reliable way.)
+function dataVersion_() {
+  var c = cache_();
+  var v = c.get(CACHE_VERSION_KEY);
+  if (!v) {
+    v = '1';
+    c.put(CACHE_VERSION_KEY, v, 21600);
+  }
+  return v;
+}
+
+function bumpDataVersion_() {
+  var c = cache_();
+  var next = String((parseInt(c.get(CACHE_VERSION_KEY), 10) || 1) + 1);
+  c.put(CACHE_VERSION_KEY, next, 21600);
+}
+
+function cachedRead_(key, producer) {
+  var c = cache_();
+  var full = 'v' + dataVersion_() + ':' + key;
+  var hit = c.get(full);
+  if (hit) {
+    try {
+      return JSON.parse(hit);
+    } catch (e) {
+      // Corrupt entry - fall through and recompute.
+    }
+  }
+  var fresh = producer();
+  // Never cache failures, or an error would stick for the whole TTL.
+  if (fresh && !fresh.error && fresh.success !== false) {
+    try {
+      var payload = JSON.stringify(fresh);
+      // CacheService rejects values above ~100KB; very large sheets simply
+      // skip the cache instead of throwing.
+      if (payload.length < 100000) c.put(full, payload, READ_CACHE_TTL);
+    } catch (e) {
+      // Not cacheable - ignore, correctness is unaffected.
+    }
+  }
+  return fresh;
+}
+
+// ── Batched writers ──────────────────────────────────────────────
+// Replaces the old "headers.forEach(... setValue ...)" pattern, which issued
+// one round trip per column. This issues exactly one for the whole row.
+function writeRowUpdates_(sheet, rowIndex, updates) {
+  var data = sheetData_(sheet);
+  var headers = data[0];
+  var row = (data[rowIndex - 1] || []).slice();
+  while (row.length < headers.length) row.push('');
+  var changed = false;
+  for (var i = 0; i < headers.length; i++) {
+    if (updates[headers[i]] !== undefined) {
+      row[i] = updates[headers[i]];
+      changed = true;
+    }
+  }
+  if (!changed) return false;
+  sheet.getRange(rowIndex, 1, 1, headers.length).setValues([row]);
+  invalidateSheetData_(sheet);
+  bumpDataVersion_();
+  return true;
+}
+
+// Removing N scattered rows used to mean N deleteRow() calls. Instead the
+// surviving rows are written back in one setValues and any leftover rows at
+// the bottom are removed with a single deleteRows call.
+function rewriteRows_(sheet, keptRows) {
+  var width = sheetData_(sheet)[0].length;
+  var lastRow = sheet.getLastRow();
+  var normalised = keptRows.map(function (r) {
+    var row = r.slice(0, width);
+    while (row.length < width) row.push('');
+    return row;
+  });
+  if (normalised.length) {
+    sheet.getRange(2, 1, normalised.length, width).setValues(normalised);
+  }
+  var surplus = lastRow - 1 - normalised.length;
+  if (surplus > 0) sheet.deleteRows(normalised.length + 2, surplus);
+  invalidateSheetData_(sheet);
+  bumpDataVersion_();
+}
+
 function getSheet(name) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  // PERF: memoised so repeated getSheet() calls in one request don't re-open
+  // the spreadsheet or re-run the Fees self-heal check.
+  if (__sheetMemo[name]) return __sheetMemo[name];
+  const ss = ss_();
   let sheet = ss.getSheetByName(name);
   if (!sheet) sheet = createSheet(name);
   // Self-heal: institutes that already have a Fees sheet from before the
@@ -218,6 +364,7 @@ function getSheet(name) {
   // columns yet. Add them automatically instead of requiring anyone to
   // manually edit the sheet.
   if (name === SHEETS.FEES) ensureFeesCycleColumns(sheet);
+  __sheetMemo[name] = sheet;
   return sheet;
 }
 
@@ -257,7 +404,7 @@ function createSheet(name) {
 // Simple numeric auto-increment ID: 1, 2, 3...
 function nextStudentId() {
   const sheet = getSheet(SHEETS.STUDENTS);
-  const data = sheet.getDataRange().getValues();
+  const data = sheetData_(sheet);
   if (data.length < 2) return 1;
   let max = 0;
   for (let i = 1; i < data.length; i++) {
@@ -279,7 +426,7 @@ function generateId(prefix) {
 var DATE_COLS = ['Date','JoiningDate','DueDate','LastPaymentDate','CreatedAt','FollowUpDate','CycleStart'];
 
 function sheetToObjects(sheet) {
-  var data = sheet.getDataRange().getValues();
+  var data = sheetData_(sheet);
   if (data.length < 2) return [];
   var headers = data[0];
   return data.slice(1).map(function(row) {
@@ -297,7 +444,7 @@ function sheetToObjects(sheet) {
 }
 
 function findRowByField(sheet, fieldName, value) {
-  const data = sheet.getDataRange().getValues();
+  const data = sheetData_(sheet);
   const headers = data[0];
   const colIndex = headers.indexOf(fieldName);
   if (colIndex === -1) return -1;
@@ -333,15 +480,13 @@ function updateStudent(body) {
   const sheet = getSheet(SHEETS.STUDENTS);
   const rowIndex = findRowByField(sheet, 'StudentID', body.studentId);
   if (rowIndex === -1) return { success: false, error: 'Student not found' };
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   const updates = {
     StudentName: body.studentName, Phone: body.phone,
     ParentContact: body.parentContact, Course: body.course,
     Email: body.email, Address: body.address
   };
-  headers.forEach((h, i) => {
-    if (updates[h] !== undefined) sheet.getRange(rowIndex, i + 1).setValue(updates[h]);
-  });
+  // PERF: one write for the whole row instead of one per column.
+  writeRowUpdates_(sheet, rowIndex, updates);
   return { success: true, message: 'Student updated' };
 }
 
@@ -359,14 +504,14 @@ function deleteStudent(studentId) {
   // Also remove attendance records for this student
   const attendanceSheet = getSheet(SHEETS.ATTENDANCE);
   // Delete in reverse order so row indices don't shift
-  const attData = attendanceSheet.getDataRange().getValues();
-  const header = attData[0];
-  const sidCol = header.indexOf('StudentID');
-  for (let i = attData.length - 1; i >= 1; i--) {
-    if (String(attData[i][sidCol]) === String(studentId)) {
-      attendanceSheet.deleteRow(i + 1);
-    }
+  const attData = sheetData_(attendanceSheet);
+  const sidCol = attData[0].indexOf('StudentID');
+  // PERF: one rewrite instead of a deleteRow() per matching record.
+  const keptAtt = [];
+  for (let i = 1; i < attData.length; i++) {
+    if (String(attData[i][sidCol]) !== String(studentId)) keptAtt.push(attData[i]);
   }
+  if (keptAtt.length !== attData.length - 1) rewriteRows_(attendanceSheet, keptAtt);
 
   return { success: true, message: 'Student deleted' };
 }
@@ -390,19 +535,20 @@ function markAttendance(body) {
 
   const isoDate = toISO(date); // always store as YYYY-MM-DD
 
-  // Remove existing records for this date
-  const raw = sheet.getDataRange().getValues();
+  // PERF: this used to call deleteRow() for every existing row on this date
+  // and appendRow() for every student - up to 2N remote round trips, which is
+  // why saving a full class took tens of seconds. Now the sheet is read once,
+  // rebuilt in memory, and written back in a single setValues call.
+  const raw = sheetData_(sheet);
   const dateCol = raw[0].indexOf('Date');
-  const toDelete = [];
-  for (let i = raw.length - 1; i >= 1; i--) {
-    if (toISO(raw[i][dateCol]) === isoDate) toDelete.push(i + 1);
+  const kept = [];
+  for (let i = 1; i < raw.length; i++) {
+    if (toISO(raw[i][dateCol]) !== isoDate) kept.push(raw[i]);
   }
-  toDelete.forEach(r => sheet.deleteRow(r));
-
-  // Write new records
   records.forEach(r => {
-    sheet.appendRow([generateId('ATT'), r.studentId, r.studentName, isoDate, r.status]);
+    kept.push([generateId('ATT'), r.studentId, r.studentName, isoDate, r.status]);
   });
+  rewriteRows_(sheet, kept);
 
   return { success: true, message: `Attendance saved for ${records.length} students on ${isoDate}` };
 }
@@ -480,16 +626,19 @@ function updateFees(body) {
   const sheet = getSheet(SHEETS.FEES);
   const rowIndex = findRowByField(sheet, 'StudentID', body.studentId);
   if (rowIndex === -1) return { success: false, error: 'Fee record not found' };
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const rowData = sheetData_(sheet);
+  const headers = rowData[0];
   const totalFee = parseFloat(body.totalFee) || 0;
   const paidAmount = parseFloat(body.paidAmount) || 0;
   const pendingAmount = totalFee - paidAmount;
   const cycle = body.cycle || 'monthly';
   const months = cycleMonths(cycle);
 
+  // PERF: read from the single in-memory snapshot instead of one round trip
+  // per cell.
   const readCol = (colName) => {
     const i = headers.indexOf(colName);
-    return i === -1 ? '' : toISO(sheet.getRange(rowIndex, i + 1).getValue());
+    return i === -1 ? '' : toISO((rowData[rowIndex - 1] || [])[i]);
   };
 
   let dueDate, cycleStart, status;
@@ -523,9 +672,8 @@ function updateFees(body) {
     DueDate: dueDate || '', LastPaymentDate: body.lastPaymentDate || '', Status: status,
     Period: period, CycleStart: cycleStart || ''
   };
-  headers.forEach((h, i) => {
-    if (updates[h] !== undefined) sheet.getRange(rowIndex, i + 1).setValue(updates[h]);
-  });
+  // PERF: one write for the whole row instead of one per column.
+  writeRowUpdates_(sheet, rowIndex, updates);
   return { success: true, message: 'Fee updated', status, dueDate, period };
 }
 
@@ -549,15 +697,13 @@ function updateEnquiry(body) {
   const sheet = getSheet(SHEETS.ENQUIRIES);
   const rowIndex = findRowByField(sheet, 'EnquiryID', body.enquiryId);
   if (rowIndex === -1) return { success: false, error: 'Enquiry not found' };
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   const updates = {
     Name: body.name, Phone: body.phone, Email: body.email,
     Course: body.course, Status: body.status, Notes: body.notes,
     FollowUpDate: body.followUpDate
   };
-  headers.forEach((h, i) => {
-    if (updates[h] !== undefined) sheet.getRange(rowIndex, i + 1).setValue(updates[h]);
-  });
+  // PERF: one write for the whole row instead of one per column.
+  writeRowUpdates_(sheet, rowIndex, updates);
   return { success: true, message: 'Enquiry updated' };
 }
 
@@ -663,16 +809,14 @@ function updateBatch(body) {
   const sheet = getSheet(SHEETS.BATCHES);
   const rowIndex = findRowByField(sheet, 'BatchID', body.batchId);
   if (rowIndex === -1) return { success: false, error: 'Batch not found' };
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   const updates = {
     BatchName: body.batchName,
     Course: body.course,
     Teacher: body.teacher,
     Description: body.description
   };
-  headers.forEach((h, i) => {
-    if (updates[h] !== undefined) sheet.getRange(rowIndex, i + 1).setValue(updates[h]);
-  });
+  // PERF: one write for the whole row instead of one per column.
+  writeRowUpdates_(sheet, rowIndex, updates);
   return { success: true, message: 'Batch updated' };
 }
 
@@ -680,9 +824,7 @@ function assignStudents(body) {
   const sheet = getSheet(SHEETS.BATCHES);
   const rowIndex = findRowByField(sheet, 'BatchID', body.batchId);
   if (rowIndex === -1) return { success: false, error: 'Batch not found' };
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  const col = headers.indexOf('Students') + 1;
-  if (col > 0) sheet.getRange(rowIndex, col).setValue(body.students || '');
+  writeRowUpdates_(sheet, rowIndex, { Students: body.students || '' });
   return { success: true, message: 'Students assigned' };
 }
 
@@ -694,13 +836,14 @@ function deleteBatch(batchId) {
 
   // Delete all schedule slots for this batch
   const sSheet = getSheet(SHEETS.SCHEDULE);
-  const data = sSheet.getDataRange().getValues();
+  const data = sheetData_(sSheet);
   const batchCol = data[0].indexOf('BatchID');
-  const toDelete = [];
-  for (let i = data.length - 1; i >= 1; i--) {
-    if (String(data[i][batchCol]) === String(batchId)) toDelete.push(i + 1);
+  // PERF: one rewrite instead of a deleteRow() per slot.
+  const keptSlots = [];
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][batchCol]) !== String(batchId)) keptSlots.push(data[i]);
   }
-  toDelete.forEach(r => sSheet.deleteRow(r));
+  if (keptSlots.length !== data.length - 1) rewriteRows_(sSheet, keptSlots);
 
   return { success: true, message: 'Batch and its schedule deleted' };
 }
@@ -766,7 +909,6 @@ function updateSlot(body) {
   const sheet = getSheet(SHEETS.SCHEDULE);
   const rowIndex = findRowByField(sheet, 'SlotID', body.slotId);
   if (rowIndex === -1) return { success: false, error: 'Slot not found' };
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   const updates = {
     BatchID: body.batchId,
     Day: body.day,
@@ -774,9 +916,8 @@ function updateSlot(body) {
     EndTime: body.endTime,
     Subject: body.subject
   };
-  headers.forEach((h, i) => {
-    if (updates[h] !== undefined) sheet.getRange(rowIndex, i + 1).setValue(updates[h]);
-  });
+  // PERF: one write for the whole row instead of one per column.
+  writeRowUpdates_(sheet, rowIndex, updates);
   return { success: true, message: 'Slot updated' };
 }
 
