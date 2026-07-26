@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import InstituteLayout from '../../components/layout/InstituteLayout';
+import LiquidSearch from '../../components/ui/LiquidSearch';
 import Modal from '../../components/ui/Modal';
 import api, { getUser } from '../../lib/api';
 
@@ -141,8 +142,13 @@ export default function EnquiriesPage() {
 
       <div className="flex flex-col sm:flex-row gap-3 justify-between mb-4">
         <div className="flex gap-2 flex-wrap">
-          <input className="input-field max-w-xs" placeholder="Search..."
-            value={search} onChange={e => setSearch(e.target.value)} />
+          <LiquidSearch
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search enquiries..."
+            ariaLabel="Search enquiries"
+            expandedWidth={260}
+          />
           {['all', 'New', 'Follow-Up', 'Converted', 'Lost'].map(f => (
             <button key={f} onClick={() => setFilter(f)}
               className={`text-sm px-3 py-1.5 rounded-lg font-medium transition-colors ${

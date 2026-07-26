@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import InstituteLayout from '../../components/layout/InstituteLayout';
+import LiquidSearch from '../../components/ui/LiquidSearch';
 import Modal from '../../components/ui/Modal';
 import api, { getUser } from '../../lib/api';
 
@@ -92,8 +93,13 @@ export default function StudentsPage() {
   return (
     <InstituteLayout title="Students">
       <div className="flex flex-col sm:flex-row gap-3 justify-between mb-6">
-        <input className="input-field max-w-sm" placeholder="Search by name, phone, course..."
-          value={search} onChange={e => setSearch(e.target.value)} />
+        <LiquidSearch
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search by name, phone, course..."
+          ariaLabel="Search students"
+          expandedWidth={340}
+        />
         <button onClick={openNew} className="btn-primary whitespace-nowrap">➕ Add Student</button>
       </div>
 

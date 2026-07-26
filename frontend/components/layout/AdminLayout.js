@@ -1,7 +1,6 @@
-import { useState, useRef } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { clearAuth, getUser } from '../../lib/api';
+import LiquidDock from '../ui/LiquidDock';
 
 const NAV = [
   { href: '/admin/dashboard', label: 'Dashboard', icon: (
@@ -18,41 +17,6 @@ const NAV = [
 export default function AdminLayout({ children, title }) {
   const router = useRouter();
   const user = getUser();
-
-  // ── Apple Dock-style magnification for the bottom tab bar ─────────
-  // Mirrors InstituteLayout's implementation exactly — refs + rAF, no new
-  // dependency, no re-renders, never fires on touch so tapping is untouched.
-  const dockIconRefs = useRef([]);
-  const dockRafRef = useRef(null);
-  const DOCK_RADIUS = 90;
-  const DOCK_MAX_SCALE = 1.4;
-
-  const handleDockMove = (e) => {
-    const clientX = e.clientX;
-    if (dockRafRef.current) return;
-    dockRafRef.current = requestAnimationFrame(() => {
-      dockRafRef.current = null;
-      dockIconRefs.current.forEach((el) => {
-        if (!el) return;
-        const rect = el.getBoundingClientRect();
-        const center = rect.left + rect.width / 2;
-        const dist = Math.abs(clientX - center);
-        const t = Math.max(0, 1 - dist / DOCK_RADIUS);
-        const scale = 1 + (DOCK_MAX_SCALE - 1) * t * t; // ease-out falloff
-        const lift = (scale - 1) * 12;
-        el.style.transform = `translateY(${-lift}px) scale(${scale})`;
-        if (el.parentElement) el.parentElement.style.zIndex = scale > 1.05 ? 5 : 1;
-      });
-    });
-  };
-
-  const handleDockLeave = () => {
-    dockIconRefs.current.forEach((el) => {
-      if (!el) return;
-      el.style.transform = 'translateY(0px) scale(1)';
-      if (el.parentElement) el.parentElement.style.zIndex = 1;
-    });
-  };
 
   const logout = () => {
     clearAuth();
@@ -131,88 +95,11 @@ export default function AdminLayout({ children, title }) {
         </div>
       </main>
 
-      {/* ── Bottom Tab Bar — always visible ────────────────────────── */}
-      <nav
-        onMouseMove={handleDockMove}
-        onMouseLeave={handleDockLeave}
-        className="noise-overlay"
-        style={{
-        flexShrink: 0,
-        position: 'relative',
-        background: 'rgba(10,18,58,0.97)',
-        backdropFilter: 'blur(20px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-        borderTop: '1px solid rgba(92,225,230,0.12)',
-        boxShadow: '0 -4px 24px rgba(0,0,0,0.3)',
-        display: 'flex',
-        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-      }}>
-        {NAV.map((item, i) => {
-          const active = router.pathname === item.href;
-          return (
-            <Link key={item.href} href={item.href} style={{
-              flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-              justifyContent: 'center', gap: 3, padding: '10px 2px 9px',
-              textDecoration: 'none',
-              color: active ? '#5ce1e6' : 'rgba(180,200,240,0.4)',
-              transition: 'color 0.2s ease',
-              position: 'relative',
-            }}>
-              {active && (
-                <span style={{
-                  position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
-                  width: 28, height: 3, borderRadius: '0 0 3px 3px',
-                  background: 'linear-gradient(90deg, #5ce1e6, #d4af37)',
-                }} />
-              )}
-              <span
-                ref={(el) => (dockIconRefs.current[i] = el)}
-                style={{
-                  lineHeight: 1,
-                  filter: active ? 'drop-shadow(0 0 6px rgba(92,225,230,0.6))' : 'none',
-                  transition: 'filter 0.2s ease, transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1)',
-                  transformOrigin: 'center bottom',
-                  willChange: 'transform',
-                }}
-              >
-                {item.icon}
-              </span>
-              <span style={{
-                fontSize: '9px', fontWeight: active ? 700 : 500,
-                letterSpacing: '0.01em',
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                maxWidth: '100%', textAlign: 'center',
-              }}>
-                {item.label}
-              </span>
-            </Link>
-          );
-        })}
-
-        {/* Logout tab */}
-        <button onClick={logout} style={{
-          flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-          justifyContent: 'center', gap: 3, padding: '10px 2px 9px',
-          background: 'transparent', border: 'none', cursor: 'pointer',
-          color: 'rgba(248,113,113,0.55)', transition: 'color 0.2s ease',
-        }}
-          onMouseEnter={e => e.currentTarget.style.color = '#f87171'}
-          onMouseLeave={e => e.currentTarget.style.color = 'rgba(248,113,113,0.55)'}
-        >
-          <span
-            ref={(el) => (dockIconRefs.current[NAV.length] = el)}
-            style={{
-              lineHeight: 1,
-              transition: 'transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1)',
-              transformOrigin: 'center bottom',
-              willChange: 'transform',
-            }}
-          >
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-          </span>
-          <span style={{ fontSize: '9px', fontWeight: 500 }}>Logout</span>
-        </button>
-      </nav>
+      {/* ── Bottom dock — Apple-style magnification on dark-blue glass ── */}
+      <LiquidDock
+        items={NAV}
+        onLogout={logout}
+       />
 
       <style jsx global>{`
         html, body {
@@ -222,6 +109,105 @@ export default function AdminLayout({ children, title }) {
         html {
           height: -webkit-fill-available;
         }
+        /* ─── LIQUID GLASS DASHBOARD ──────────────────────────────────
+           Scoped to .app-shell so it only affects the admin/institute
+           dashboards — the marketing pages and both login pages are untouched.
+           Only transform/opacity/filter animate, so scrolling stays smooth. */
+        .app-shell {
+          --glass-ease: cubic-bezier(0.16, 1, 0.3, 1);
+          isolation: isolate;
+        }
+
+        /* Ambient dark-blue depth behind the frosted panels. Fixed, so it does
+           not repaint while the content scrolls. */
+        .app-shell::before {
+          content: '';
+          position: fixed;
+          inset: 0;
+          z-index: 0;
+          pointer-events: none;
+          background:
+            radial-gradient(1100px 620px at 12% -8%, rgba(92, 225, 230, 0.16), transparent 62%),
+            radial-gradient(900px 560px at 92% 4%, rgba(23, 45, 116, 0.2), transparent 60%),
+            radial-gradient(760px 620px at 50% 112%, rgba(17, 36, 93, 0.16), transparent 66%);
+        }
+        .app-shell > header,
+        .app-shell > main,
+        .app-shell > nav { position: relative; z-index: 1; }
+
+        .app-shell > main { scroll-behavior: smooth; overscroll-behavior-y: contain; }
+
+        /* Frosted panels. The light page background shows through, so text
+           contrast is unchanged — dark ink on near-white, same as before. */
+        .app-shell .card {
+          background: linear-gradient(180deg, rgba(255, 255, 255, 0.88) 0%, rgba(255, 255, 255, 0.72) 100%);
+          backdrop-filter: blur(20px) saturate(165%);
+          -webkit-backdrop-filter: blur(20px) saturate(165%);
+          border: 1px solid rgba(255, 255, 255, 0.72);
+          border-radius: 18px;
+          box-shadow:
+            0 12px 32px rgba(17, 36, 93, 0.1),
+            0 2px 6px rgba(17, 36, 93, 0.05),
+            inset 0 1px 0 rgba(255, 255, 255, 0.92);
+          transition: transform 460ms var(--glass-ease), box-shadow 460ms var(--glass-ease);
+        }
+        @media (hover: hover) and (pointer: fine) {
+          .app-shell .card:hover {
+            transform: translateY(-2px);
+            box-shadow:
+              0 20px 46px rgba(17, 36, 93, 0.14),
+              inset 0 1px 0 rgba(255, 255, 255, 0.95);
+          }
+        }
+
+        /* Content settles in instead of snapping in. */
+        .app-shell > main > div > * {
+          animation: glass-rise 560ms var(--glass-ease) both;
+        }
+        .app-shell > main > div > *:nth-child(2) { animation-delay: 60ms; }
+        .app-shell > main > div > *:nth-child(3) { animation-delay: 110ms; }
+        .app-shell > main > div > *:nth-child(4) { animation-delay: 150ms; }
+        .app-shell > main > div > *:nth-child(n + 5) { animation-delay: 180ms; }
+        @keyframes glass-rise {
+          from { opacity: 0; transform: translate3d(0, 10px, 0); }
+          to { opacity: 1; transform: translate3d(0, 0, 0); }
+        }
+
+        /* Inputs and buttons get the same material treatment. */
+        .app-shell .input-field {
+          background: rgba(255, 255, 255, 0.82);
+          backdrop-filter: blur(10px);
+          -webkit-backdrop-filter: blur(10px);
+          border-radius: 12px;
+          transition: box-shadow 260ms var(--glass-ease), border-color 260ms var(--glass-ease),
+            background 260ms var(--glass-ease);
+        }
+        .app-shell .input-field:focus {
+          background: #fff;
+          box-shadow: 0 0 0 4px rgba(92, 225, 230, 0.16);
+        }
+
+        .app-shell .btn-primary {
+          border-radius: 12px;
+          box-shadow: 0 8px 22px rgba(17, 36, 93, 0.18);
+          transition: transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1),
+            box-shadow 260ms var(--glass-ease), filter 260ms var(--glass-ease);
+        }
+        .app-shell .btn-primary:hover { transform: translateY(-1px); filter: brightness(1.06); }
+        .app-shell .btn-primary:active { transform: scale(0.97); }
+
+        /* Table rows highlight with a cool tint rather than flat grey. */
+        .app-shell tbody tr { transition: background 200ms var(--glass-ease); }
+        .app-shell tbody tr:hover { background: rgba(92, 225, 230, 0.07); }
+
+        @media (prefers-reduced-motion: reduce) {
+          .app-shell > main > div > * { animation: none !important; }
+          .app-shell .card,
+          .app-shell .btn-primary,
+          .app-shell .input-field { transition-duration: 1ms !important; }
+          .app-shell > main { scroll-behavior: auto; }
+        }
+
         .app-shell {
           height: 100vh;
           height: 100dvh; /* real visible viewport on mobile — 100vh includes the
