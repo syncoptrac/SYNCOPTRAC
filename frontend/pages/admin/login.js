@@ -3,29 +3,52 @@ import { useRouter } from 'next/router';
 import api, { setAuth } from '../../lib/api';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
+import AuthStatusPanel from '../../components/ui/AuthStatusPanel';
 
 export default function AdminLogin() {
   const [form, setForm] = useState({ username: '', password: '' });
   const [loading, setLoading] = useState(false);
+  const [phase, setPhase] = useState('idle'); // 'idle' | 'verifying' | 'success'
+  const [successLabel, setSuccessLabel] = useState('');
+  const [shakeKey, setShakeKey] = useState(0);
   const router = useRouter();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setPhase('verifying');
     try {
       const res = await api.post('/api/auth/admin/login', form);
       setAuth(res.data.token, res.data.user);
-      toast.success('Welcome back, Admin!');
-      router.push('/admin/dashboard');
+      // Exact same message this app has always shown.
+      const welcomeMsg = 'Welcome back, Admin!';
+      toast.success(welcomeMsg);
+      setSuccessLabel(welcomeMsg);
+      setPhase('success');
+      setTimeout(() => router.push('/admin/dashboard'), 900);
     } catch (err) {
       toast.error(err.response?.data?.error || 'Login failed');
-    } finally {
+      setPhase('idle');
       setLoading(false);
+      setShakeKey(k => k + 1);
     }
   };
 
   return (
-    <div className="min-h-screen bg-brand-dark flex items-center justify-center p-4">
+    <div className="min-h-screen noise-overlay flex items-center justify-center p-4" style={{
+      position: 'relative',
+      overflow: 'hidden',
+      background: 'linear-gradient(160deg, #0a1844 0%, #11245d 35%, #172d74 65%, #0d1e55 100%)',
+    }}>
+      {/* Soft ambient glows — same layered treatment used on the homepage hero */}
+      <div style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none',
+        background: 'radial-gradient(ellipse 60% 50% at 50% 20%, rgba(92,225,230,0.08) 0%, transparent 65%)',
+      }} />
+      <div style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none',
+        background: 'radial-gradient(ellipse 40% 40% at 15% 85%, rgba(212,175,55,0.05) 0%, transparent 60%)',
+      }} />
 
       {/* Back to Home — fixed top left corner */}
       <div style={{ position: 'fixed', top: 16, left: 16, zIndex: 50 }}>
@@ -45,7 +68,7 @@ export default function AdminLogin() {
         </Link>
       </div>
 
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-sm relative z-10">
         {/* Logo */}
         <div className="text-center mb-8">
           <img src="/logo.png" alt="SYNCOPTRAC" className="h-20 w-20 object-cover rounded-2xl mx-auto mb-4 shadow-lg" />
@@ -57,11 +80,14 @@ export default function AdminLogin() {
           <p className="text-gray-600 text-xs italic mt-1">Where communication gets organised and nothing is missed.</p>
         </div>
 
-        <div className="bg-brand-dark-light border border-brand-dark-light rounded-2xl p-6 shadow-xl">
-          {/* autoComplete="off" on form + unique autocomplete values on inputs
-              prevents browser from autofilling admin credentials elsewhere */}
+        <div key={shakeKey} className={`bg-brand-dark-light border border-brand-dark-light rounded-2xl p-6 shadow-xl ${shakeKey > 0 ? 'auth-shake' : ''}`}>
+          {phase !== 'idle' ? (
+            <AuthStatusPanel phase={phase} label={phase === 'verifying' ? 'Signing in...' : successLabel} />
+          ) : (
+          /* autoComplete="off" on form + unique autocomplete values on inputs
+              prevents browser from autofilling admin credentials elsewhere */
           <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
-            <div>
+            <div className="auth-field">
               <label className="block text-sm font-medium text-gray-300 mb-1.5">Username</label>
               <input
                 name="admin-username"
@@ -73,7 +99,7 @@ export default function AdminLogin() {
                 required
               />
             </div>
-            <div>
+            <div className="auth-field">
               <label className="block text-sm font-medium text-gray-300 mb-1.5">Password</label>
               <input
                 name="admin-password"
@@ -91,6 +117,7 @@ export default function AdminLogin() {
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
+          )}
         </div>
 
         <div className="mt-5 text-center space-y-2">

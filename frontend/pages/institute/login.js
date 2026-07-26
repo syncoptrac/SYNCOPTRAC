@@ -3,11 +3,15 @@ import { useRouter } from 'next/router';
 import api, { setAuth } from '../../lib/api';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
+import AuthStatusPanel from '../../components/ui/AuthStatusPanel';
 
 export default function InstituteLogin() {
   const [form, setForm] = useState({ loginId: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [displaced, setDisplaced] = useState(false);
+  const [phase, setPhase] = useState('idle'); // 'idle' | 'verifying' | 'success'
+  const [successLabel, setSuccessLabel] = useState('');
+  const [shakeKey, setShakeKey] = useState(0);
   const router = useRouter();
 
   useEffect(() => {
@@ -19,20 +23,40 @@ export default function InstituteLogin() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setPhase('verifying');
     try {
       const res = await api.post('/api/auth/institute/login', form);
       setAuth(res.data.token, res.data.user);
-      toast.success(`Welcome, ${res.data.user.instituteName}!`);
-      router.push('/institute/dashboard');
+      // Exact same message this app has always shown — just staged inside
+      // the success animation instead of only appearing as a toast.
+      const welcomeMsg = `Welcome, ${res.data.user.instituteName}!`;
+      toast.success(welcomeMsg);
+      setSuccessLabel(welcomeMsg);
+      setPhase('success');
+      setTimeout(() => router.push('/institute/dashboard'), 900);
     } catch (err) {
       toast.error(err.response?.data?.error || 'Login failed');
-    } finally {
+      setPhase('idle');
       setLoading(false);
+      setShakeKey(k => k + 1);
     }
   };
 
   return (
-    <div className="min-h-screen bg-brand-dark flex items-center justify-center p-4">
+    <div className="min-h-screen noise-overlay flex items-center justify-center p-4" style={{
+      position: 'relative',
+      overflow: 'hidden',
+      background: 'linear-gradient(160deg, #0a1844 0%, #11245d 35%, #172d74 65%, #0d1e55 100%)',
+    }}>
+      {/* Soft ambient glows — same layered treatment used on the homepage hero */}
+      <div style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none',
+        background: 'radial-gradient(ellipse 60% 50% at 50% 20%, rgba(92,225,230,0.08) 0%, transparent 65%)',
+      }} />
+      <div style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none',
+        background: 'radial-gradient(ellipse 40% 40% at 15% 85%, rgba(212,175,55,0.05) 0%, transparent 60%)',
+      }} />
 
       {/* Back to Home — fixed top left corner */}
       <div style={{ position: 'fixed', top: 16, left: 16, zIndex: 50 }}>
@@ -52,7 +76,7 @@ export default function InstituteLogin() {
         </Link>
       </div>
 
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-sm relative z-10">
 
         {/* Logo */}
         <div className="text-center mb-8">
@@ -86,12 +110,15 @@ export default function InstituteLogin() {
         )}
 
         {/* Login card */}
-        <div className="bg-brand-dark-light border border-gray-800 rounded-2xl shadow-xl p-6">
-          {/* autoComplete="off" + name attributes different from admin form
+        <div key={shakeKey} className={`bg-brand-dark-light border border-gray-800 rounded-2xl shadow-xl p-6 ${shakeKey > 0 ? 'auth-shake' : ''}`}>
+          {phase !== 'idle' ? (
+            <AuthStatusPanel phase={phase} label={phase === 'verifying' ? 'Signing in...' : successLabel} />
+          ) : (
+          /* autoComplete="off" + name attributes different from admin form
               + readOnly trick on password ensures browser never autofills
-              admin credentials into this institute form */}
+              admin credentials into this institute form */
           <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
-            <div>
+            <div className="auth-field">
               <label className="block text-sm font-medium text-gray-300 mb-1.5">Login ID</label>
               <input
                 name="institute-loginid"
@@ -103,7 +130,7 @@ export default function InstituteLogin() {
                 required
               />
             </div>
-            <div>
+            <div className="auth-field">
               <label className="block text-sm font-medium text-gray-300 mb-1.5">Password</label>
               <input
                 name="institute-password"
@@ -123,6 +150,7 @@ export default function InstituteLogin() {
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
+          )}
         </div>
 
         <div className="mt-5 text-center space-y-2">
