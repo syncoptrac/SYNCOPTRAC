@@ -1,137 +1,248 @@
 /**
- * Replaces the login form's content while `phase` is 'verifying' or 'success'.
- * Text shown is always passed in from the caller — this component never
- * invents its own copy, so each login page keeps its own exact wording
- * ("Signing in...", "Welcome, X!", etc.) unchanged.
+ * AuthStatusPanel — the premium "verifying → verified" stage that replaces the
+ * login form's content while a sign-in is in flight.
  *
- * phase: 'verifying' | 'success'
+ * Motion design (mirrors the reference experience):
+ *  - verifying: concentric rings breathe outward from a glowing core while a
+ *    conic sweep rotates — continuous, calm, never jumpy.
+ *  - success:   the sweep resolves into a ring that DRAWS itself, a halo
+ *    expands once, then the tick strokes on with a spring overshoot.
+ *  - label text cross-fades with a slight rise instead of hard-swapping.
+ *
+ * The component never invents copy — `label` is always passed in by the caller,
+ * so each portal keeps its own exact wording ("Signing in...", "Welcome, X!").
+ *
+ * phase:   'verifying' | 'success'
+ * exiting: true while the panel is playing its exit animation
  */
-export default function AuthStatusPanel({ phase, label }) {
+export default function AuthStatusPanel({ phase, label, exiting = false, subline }) {
+  const isSuccess = phase === 'success';
+  const fallbackSub = isSuccess ? 'Verified & Secured \u{1F512}' : 'Securing your session\u2026';
+
   return (
-    <div className="auth-status-panel">
-      {phase === 'verifying' && (
-        <div className="auth-radar">
-          <span className="auth-ring" style={{ animationDelay: '0s' }} />
-          <span className="auth-ring" style={{ animationDelay: '0.5s' }} />
-          <span className="auth-ring" style={{ animationDelay: '1s' }} />
-          <span className="auth-dot" />
-        </div>
-      )}
+    <div
+      className={`panel ${exiting ? 'is-exiting' : ''} ${isSuccess ? 'is-success' : ''}`}
+      role="status"
+      aria-live="polite"
+      aria-busy={!isSuccess}
+    >
+      <div className="stage">
+        {isSuccess ? (
+          <div className="done">
+            <span className="halo" aria-hidden="true" />
+            <svg className="mark" viewBox="0 0 64 64" aria-hidden="true">
+              <circle className="track" cx="32" cy="32" r="27" />
+              <circle className="draw" cx="32" cy="32" r="27" />
+              <path className="tick" d="M20 33.4 L28.2 41.6 L44.6 24.6" />
+            </svg>
+          </div>
+        ) : (
+          <div className="radar">
+            <span className="ring ring-1" aria-hidden="true" />
+            <span className="ring ring-2" aria-hidden="true" />
+            <span className="ring ring-3" aria-hidden="true" />
+            <span className="sweep" aria-hidden="true" />
+            <span className="core" aria-hidden="true" />
+          </div>
+        )}
+      </div>
 
-      {phase === 'success' && (
-        <div className="auth-check-wrap">
-          <svg viewBox="0 0 52 52" className="auth-check-circle">
-            <circle cx="26" cy="26" r="24" fill="none" />
-            <path fill="none" d="M14 27l8 8 16-16" className="auth-check-mark" />
-          </svg>
-        </div>
-      )}
-
-      <p className="auth-status-label">{label}</p>
+      <p className="label">{label}</p>
+      <p className="sub">{subline || fallbackSub}</p>
 
       <style jsx>{`
-        .auth-status-panel {
+        .panel {
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
-          padding: 28px 8px 20px;
-          animation: authPanelIn 0.4s cubic-bezier(0.16,1,0.3,1) forwards;
+          width: 100%;
+          height: 100%;
+          text-align: center;
+          opacity: 0;
+          transform: scale(0.97);
+          animation: panelIn 0.42s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+          will-change: opacity, transform;
         }
-        @keyframes authPanelIn {
-          from { opacity: 0; transform: translateY(6px); }
-          to   { opacity: 1; transform: translateY(0); }
+        .panel.is-exiting {
+          animation: panelOut 0.24s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+        }
+        @keyframes panelIn {
+          from { opacity: 0; transform: scale(0.97) translateY(6px); }
+          to   { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        @keyframes panelOut {
+          from { opacity: 1; transform: scale(1); }
+          to   { opacity: 0; transform: scale(1.02); }
         }
 
-        /* ── Verifying: radar pulse ─────────────────────────────────────── */
-        .auth-radar {
+        .stage {
           position: relative;
-          width: 68px;
-          height: 68px;
+          width: 76px;
+          height: 76px;
+          margin-bottom: 18px;
           display: flex;
           align-items: center;
           justify-content: center;
-          margin-bottom: 18px;
         }
-        .auth-ring {
+
+        /* ── Verifying ───────────────────────────────────────── */
+        .radar,
+        .done {
+          position: relative;
+          width: 100%;
+          height: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .ring {
+          position: absolute;
+          inset: 6px;
+          border-radius: 50%;
+          border: 1.5px solid rgba(92, 225, 230, 0.75);
+          opacity: 0;
+          transform: scale(0.5);
+          animation: ringOut 2.1s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+          will-change: transform, opacity;
+        }
+        .ring-2 { animation-delay: 0.7s; }
+        .ring-3 { animation-delay: 1.4s; }
+        @keyframes ringOut {
+          0%   { transform: scale(0.45); opacity: 0; }
+          18%  { opacity: 0.85; }
+          100% { transform: scale(1.55); opacity: 0; }
+        }
+
+        .sweep {
           position: absolute;
           inset: 0;
           border-radius: 50%;
-          border: 2px solid #5ce1e6;
-          opacity: 0;
-          animation: radarPulse 1.6s cubic-bezier(0.16,1,0.3,1) infinite;
+          border: 2px solid transparent;
+          border-top-color: #5ce1e6;
+          border-right-color: rgba(92, 225, 230, 0.35);
+          animation: sweepSpin 0.95s linear infinite;
+          will-change: transform;
         }
-        @keyframes radarPulse {
-          0%   { transform: scale(0.55); opacity: 0.9; }
-          70%  { opacity: 0; }
-          100% { transform: scale(1.6); opacity: 0; }
+        @keyframes sweepSpin {
+          to { transform: rotate(360deg); }
         }
-        .auth-dot {
+
+        .core {
           width: 10px;
           height: 10px;
           border-radius: 50%;
           background: #5ce1e6;
-          box-shadow: 0 0 12px rgba(92,225,230,0.7);
-          animation: dotPulse 1s ease-in-out infinite alternate;
+          box-shadow: 0 0 14px rgba(92, 225, 230, 0.85), 0 0 34px rgba(92, 225, 230, 0.35);
+          animation: coreBreathe 1.5s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+          will-change: transform;
         }
-        @keyframes dotPulse {
-          from { transform: scale(0.85); }
-          to   { transform: scale(1.05); }
+        @keyframes coreBreathe {
+          0%, 100% { transform: scale(0.82); opacity: 0.85; }
+          50%      { transform: scale(1.12); opacity: 1; }
         }
 
-        /* ── Success: checkmark draw-in ─────────────────────────────────── */
-        .auth-check-wrap {
-          width: 68px;
-          height: 68px;
-          margin-bottom: 18px;
-          animation: checkPop 0.5s cubic-bezier(0.34,1.56,0.64,1) forwards;
+        /* ── Success ────────────────────────────────────────── */
+        .halo {
+          position: absolute;
+          inset: -6px;
+          border-radius: 50%;
+          border: 1.5px solid rgba(52, 211, 153, 0.55);
+          opacity: 0;
+          transform: scale(0.6);
+          animation: haloOut 0.95s cubic-bezier(0.16, 1, 0.3, 1) 0.12s forwards;
+          will-change: transform, opacity;
         }
-        @keyframes checkPop {
-          from { transform: scale(0); opacity: 0; }
-          to   { transform: scale(1); opacity: 1; }
+        @keyframes haloOut {
+          0%   { transform: scale(0.6); opacity: 0.9; }
+          100% { transform: scale(1.5); opacity: 0; }
         }
-        .auth-check-circle {
+
+        .mark {
           width: 100%;
           height: 100%;
+          overflow: visible;
+          transform: scale(0.86);
+          animation: markPop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+          will-change: transform;
         }
-        .auth-check-circle circle {
+        @keyframes markPop {
+          from { transform: scale(0.86); }
+          to   { transform: scale(1); }
+        }
+        .track {
+          fill: none;
+          stroke: rgba(52, 211, 153, 0.16);
+          stroke-width: 3;
+        }
+        .draw {
+          fill: none;
           stroke: #34d399;
           stroke-width: 3;
-          stroke-dasharray: 151;
-          stroke-dashoffset: 151;
-          filter: drop-shadow(0 0 6px rgba(52,211,153,0.5));
-          animation: circleDraw 0.5s ease-out forwards;
+          stroke-linecap: round;
+          stroke-dasharray: 170;
+          stroke-dashoffset: 170;
+          transform: rotate(-90deg);
+          transform-origin: 32px 32px;
+          filter: drop-shadow(0 0 7px rgba(52, 211, 153, 0.45));
+          animation: ringDraw 0.62s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
-        .auth-check-mark {
+        @keyframes ringDraw {
+          to { stroke-dashoffset: 0; }
+        }
+        .tick {
+          fill: none;
           stroke: #34d399;
           stroke-width: 4;
           stroke-linecap: round;
           stroke-linejoin: round;
-          stroke-dasharray: 34;
-          stroke-dashoffset: 34;
-          animation: checkDraw 0.35s ease-out 0.35s forwards;
+          stroke-dasharray: 40;
+          stroke-dashoffset: 40;
+          filter: drop-shadow(0 0 6px rgba(52, 211, 153, 0.4));
+          animation: tickDraw 0.34s cubic-bezier(0.16, 1, 0.3, 1) 0.38s forwards;
         }
-        @keyframes circleDraw {
-          to { stroke-dashoffset: 0; }
-        }
-        @keyframes checkDraw {
+        @keyframes tickDraw {
           to { stroke-dashoffset: 0; }
         }
 
-        .auth-status-label {
-          color: #e5e7eb;
-          font-size: 0.9rem;
-          font-weight: 500;
-          text-align: center;
+        /* ── Copy ───────────────────────────────────────────── */
+        .label {
+          color: #eef2f7;
+          font-size: 0.925rem;
+          font-weight: 600;
           letter-spacing: 0.01em;
+          line-height: 1.35;
+          margin: 0;
+          max-width: 17rem;
+          opacity: 0;
+          animation: riseIn 0.44s cubic-bezier(0.16, 1, 0.3, 1) 0.1s forwards;
+        }
+        .sub {
+          margin: 6px 0 0;
+          font-size: 0.735rem;
+          font-weight: 500;
+          letter-spacing: 0.03em;
+          color: rgba(148, 163, 184, 0.9);
+          opacity: 0;
+          animation: riseIn 0.44s cubic-bezier(0.16, 1, 0.3, 1) 0.2s forwards;
+        }
+        .panel.is-success .sub {
+          color: #34d399;
+          animation-delay: 0.52s;
+        }
+        @keyframes riseIn {
+          from { opacity: 0; transform: translateY(6px); }
+          to   { opacity: 1; transform: translateY(0); }
         }
 
         @media (prefers-reduced-motion: reduce) {
-          .auth-status-panel, .auth-ring, .auth-dot, .auth-check-wrap,
-          .auth-check-circle circle, .auth-check-mark {
+          .panel, .ring, .sweep, .core, .halo, .mark, .draw, .tick, .label, .sub {
             animation: none !important;
+            opacity: 1 !important;
+            transform: none !important;
           }
-          .auth-check-circle circle, .auth-check-mark { stroke-dashoffset: 0; }
+          .draw, .tick { stroke-dashoffset: 0 !important; }
+          .ring { opacity: 0.35 !important; }
         }
       `}</style>
     </div>

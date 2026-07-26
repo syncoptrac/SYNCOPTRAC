@@ -330,3 +330,455 @@ html {
 @media (prefers-reduced-motion: reduce) {
   .auth-shake, .auth-field input:not(:placeholder-shown) { animation: none; }
 }
+/* ══════════════════════════════════════════════════════════════════════════════
+   PREMIUM AUTH MOTION SYSTEM
+   Shared by /institute/login and /admin/login. Every rule here is presentation
+   only — no layout ownership is taken away from the existing Tailwind classes.
+   All motion is opacity/transform (compositor-only) so it stays 60fps on
+   mid-range phones, and everything degrades to "no motion" under
+   prefers-reduced-motion.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --auth-ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+  --auth-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --auth-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ── Staggered entrance ────────────────────────────────────────────────────────
+   Logo → banner → card → footer cascade in on first paint instead of all
+   appearing at once. `--i` is the stagger index, set inline per element. */
+@keyframes authEnter {
+  from { opacity: 0; transform: translate3d(0, 14px, 0) scale(0.985); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+.auth-enter {
+  opacity: 0;
+  animation: authEnter 0.6s var(--auth-ease-out) forwards;
+  animation-delay: calc(var(--i, 0) * 80ms);
+  will-change: opacity, transform;
+}
+
+/* Logo gets a slow, barely-there float — the kind of detail that reads as
+   "expensive" without ever calling attention to itself. */
+@keyframes authLogoFloat {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50%      { transform: translate3d(0, -4px, 0); }
+}
+.auth-logo {
+  animation: authLogoFloat 6s ease-in-out 1s infinite;
+  transition: transform 0.4s var(--auth-ease-out), box-shadow 0.4s ease;
+}
+
+/* ── Card ─────────────────────────────────────────────────────────────────────
+   Deeper, softer shadow than a stock Tailwind shadow-xl, plus a hairline top
+   highlight so the card edge catches "light" like real glass. */
+.auth-card {
+  position: relative;
+  box-shadow:
+    0 24px 70px rgba(3, 10, 35, 0.55),
+    0 6px 18px rgba(3, 10, 35, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.055);
+  transition: box-shadow 0.5s var(--auth-ease-out), border-color 0.5s ease,
+              transform 0.5s var(--auth-ease-out);
+  will-change: transform;
+  backface-visibility: hidden;
+}
+.auth-card.is-busy {
+  transform: translate3d(0, -2px, 0);
+  border-color: rgba(92, 225, 230, 0.22);
+  box-shadow:
+    0 28px 80px rgba(3, 10, 35, 0.6),
+    0 0 0 1px rgba(92, 225, 230, 0.14),
+    0 0 46px rgba(92, 225, 230, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+/* ── State swap container ─────────────────────────────────────────────────────
+   min-height is set inline from the form's measured height, so the form and
+   the status panel occupy an identical box. This is what guarantees zero
+   layout shift and no page jumping between states. */
+.auth-body {
+  position: relative;
+}
+.auth-swap {
+  transition:
+    opacity 0.26s var(--auth-ease-in-out),
+    transform 0.36s var(--auth-ease-out),
+    filter 0.26s ease;
+  will-change: opacity, transform;
+}
+.auth-swap.is-hidden {
+  opacity: 0;
+  transform: scale(0.975) translate3d(0, -6px, 0);
+  filter: blur(3px);
+  pointer-events: none;
+}
+.auth-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* fieldset is used purely to disable the inputs while authenticating — it must
+   not introduce any of the browser's default box. */
+.auth-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.auth-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ── Ambient aura behind the card ─────────────────────────────────────────────
+   Idle: invisible. Verifying: a slow cyan breath. Success: settles to green.
+   Fixed-size and pointer-events:none, so it can never affect layout or taps. */
+.auth-aura {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 460px;
+  height: 460px;
+  margin: -230px 0 0 -230px;
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(circle, rgba(92, 225, 230, 0.16) 0%, transparent 68%);
+  transition: opacity 0.6s var(--auth-ease-out), background 0.6s ease;
+  will-change: opacity;
+}
+.auth-aura.is-active {
+  opacity: 1;
+  animation: authAuraBreathe 2.6s ease-in-out infinite;
+}
+.auth-aura.is-success {
+  background: radial-gradient(circle, rgba(52, 211, 153, 0.16) 0%, transparent 68%);
+  animation: none;
+}
+@keyframes authAuraBreathe {
+  0%, 100% { transform: scale(0.94); opacity: 0.75; }
+  50%      { transform: scale(1.04); opacity: 1; }
+}
+
+/* ── Error shake ──────────────────────────────────────────────────────────────
+   translate3d instead of translateX so it runs on the compositor, and it is
+   applied to the card without remounting it (values and focus are preserved). */
+@keyframes authShake3d {
+  10%, 90% { transform: translate3d(-1px, 0, 0); }
+  20%, 80% { transform: translate3d(2px, 0, 0); }
+  30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+  40%, 60% { transform: translate3d(4px, 0, 0); }
+}
+.auth-shake {
+  animation: authShake3d 0.52s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+
+/* ── Route frame ──────────────────────────────────────────────────────────────
+   The page wrapper in _app.js. Only opacity animates; nothing here reflows. */
+.route-frame {
+  transition: opacity 0.28s ease;
+  will-change: opacity;
+}
+
+/* ── Mobile polish ────────────────────────────────────────────────────────────
+   Smaller aura + no logo float on phones: less GPU work, identical feel. */
+@media (max-width: 640px) {
+  .auth-aura {
+    width: 320px;
+    height: 320px;
+    margin: -160px 0 0 -160px;
+  }
+  .auth-logo { animation: none; }
+  .auth-card.is-busy { transform: none; }
+}
+
+/* ── Accessibility ────────────────────────────────────────────────────────────*/
+@media (prefers-reduced-motion: reduce) {
+  .auth-enter { opacity: 1; animation: none; }
+  .auth-logo { animation: none; }
+  .auth-aura { animation: none; }
+  .auth-shake { animation: none; }
+  .auth-swap { transition: opacity 0.01ms; filter: none; transform: none; }
+  .auth-swap.is-hidden { transform: none; filter: none; }
+  .auth-card, .route-frame { transition: none; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PREMIUM AUTH LAYOUT — split brand/form shell
+   Fills the dead space on tablet/desktop without adding a single new word.
+   Dark blue palette only: #0a1844 / #0d1e55 / #11245d / #172d74 + cyan accent.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.auth-shell {
+  width: 100%;
+  max-width: 420px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 26px;
+  align-items: center;
+}
+
+/* ── Brand column ─────────────────────────────────────────────────────────── */
+.auth-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.auth-orbit {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 14px;
+}
+
+/* Decorative concentric rings — desktop only, purely visual (no text). */
+.auth-orbit-ring {
+  display: none;
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.auth-brand-logo {
+  position: relative;
+  z-index: 1;
+  width: 80px;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 18px;
+  cursor: pointer;
+  box-shadow:
+    0 18px 40px -12px rgba(3, 10, 32, 0.7),
+    0 0 0 1px rgba(92, 225, 230, 0.12);
+}
+
+.auth-brand-title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+}
+
+.auth-brand-portal {
+  margin-top: 6px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #9ca3af;
+}
+
+.auth-brand-rule {
+  display: block;
+  width: 56px;
+  height: 1px;
+  margin: 14px 0;
+  background: linear-gradient(
+    90deg,
+    rgba(92, 225, 230, 0) 0%,
+    rgba(92, 225, 230, 0.55) 50%,
+    rgba(92, 225, 230, 0) 100%
+  );
+}
+
+.auth-brand-tagline {
+  max-width: 34ch;
+  font-size: 0.75rem;
+  font-style: italic;
+  line-height: 1.6;
+  color: #6b7280;
+}
+
+/* ── Form column ──────────────────────────────────────────────────────────── */
+.auth-panel {
+  position: relative;
+  width: 100%;
+}
+
+/* ── Glass card ───────────────────────────────────────────────────────────── */
+.auth-card--glass {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(
+    165deg,
+    rgba(23, 45, 116, 0.92) 0%,
+    rgba(17, 36, 93, 0.94) 52%,
+    rgba(10, 24, 68, 0.96) 100%
+  );
+  border: 1px solid rgba(92, 225, 230, 0.14);
+  box-shadow:
+    0 32px 70px -24px rgba(2, 8, 28, 0.9),
+    0 2px 8px -2px rgba(2, 8, 28, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
+  backdrop-filter: blur(14px) saturate(120%);
+}
+
+/* Top-edge light catch + soft interior bloom. */
+.auth-card--glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    120% 62% at 50% -12%,
+    rgba(92, 225, 230, 0.1) 0%,
+    rgba(92, 225, 230, 0) 62%
+  );
+}
+
+.auth-card--glass::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 14%;
+  right: 14%;
+  height: 1px;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    rgba(92, 225, 230, 0) 0%,
+    rgba(92, 225, 230, 0.6) 50%,
+    rgba(92, 225, 230, 0) 100%
+  );
+}
+
+/* Keep real content above both pseudo layers. */
+.auth-card--glass > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Tablet and up: two columns, brand gets the reclaimed space ──────────── */
+@media (min-width: 900px) {
+  .auth-shell {
+    max-width: 940px;
+    grid-template-columns: minmax(0, 1fr) 396px;
+    gap: 72px;
+  }
+
+  .auth-brand {
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .auth-orbit {
+    width: 216px;
+    height: 216px;
+    margin: 0 0 28px;
+    place-items: center start;
+  }
+
+  .auth-orbit-ring {
+    display: block;
+    left: 52px;
+    top: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  .auth-orbit-ring:nth-child(1) {
+    width: 168px;
+    height: 168px;
+    border: 1px solid rgba(92, 225, 230, 0.2);
+    animation: authOrbitPulse 4.4s var(--auth-ease-in-out, ease-in-out) infinite;
+  }
+
+  .auth-orbit-ring:nth-child(2) {
+    width: 232px;
+    height: 232px;
+    border: 1px dashed rgba(92, 225, 230, 0.13);
+    animation: authOrbitSpin 26s linear infinite;
+  }
+
+  .auth-orbit-ring:nth-child(3) {
+    width: 300px;
+    height: 300px;
+    border: 1px solid rgba(212, 175, 55, 0.08);
+    animation: authOrbitPulse 6.2s var(--auth-ease-in-out, ease-in-out) infinite reverse;
+  }
+
+  .auth-brand-logo {
+    width: 104px;
+    height: 104px;
+    border-radius: 24px;
+  }
+
+  .auth-brand-title {
+    font-size: 2.65rem;
+  }
+
+  .auth-brand-portal {
+    margin-top: 10px;
+    font-size: 1rem;
+  }
+
+  .auth-brand-rule {
+    width: 88px;
+    margin: 20px 0;
+    background: linear-gradient(
+      90deg,
+      rgba(92, 225, 230, 0.65) 0%,
+      rgba(92, 225, 230, 0) 100%
+    );
+  }
+
+  .auth-brand-tagline {
+    font-size: 0.95rem;
+    max-width: 32ch;
+  }
+
+  /* Hairline separating the two columns. */
+  .auth-panel::before {
+    content: '';
+    position: absolute;
+    top: 6%;
+    bottom: 6%;
+    left: -36px;
+    width: 1px;
+    background: linear-gradient(
+      180deg,
+      rgba(92, 225, 230, 0) 0%,
+      rgba(92, 225, 230, 0.18) 50%,
+      rgba(92, 225, 230, 0) 100%
+    );
+  }
+}
+
+@keyframes authOrbitSpin {
+  from {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+@keyframes authOrbitPulse {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.035);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-orbit-ring:nth-child(1),
+  .auth-orbit-ring:nth-child(2),
+  .auth-orbit-ring:nth-child(3) {
+    animation: none !important;
+  }
+}
