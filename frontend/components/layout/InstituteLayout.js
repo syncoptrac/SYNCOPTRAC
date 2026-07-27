@@ -234,6 +234,14 @@ export default function InstituteLayout({ children, title }) {
 
         .app-shell > main { scroll-behavior: smooth; overscroll-behavior-y: contain; }
 
+        /* Phone spacing: the stock card padding made every KPI card twice as
+           tall as it needed to be on a 360px screen, which is what pushed the
+           content under the dock. Table cards (.p-0) are excluded. */
+        @media (max-width: 520px) {
+          .app-shell .card:not(.p-0) { padding: 14px; border-radius: 16px; }
+          .app-shell > main { padding: 12px 12px 4px; }
+        }
+
         /* Frosted panels. The light page background shows through, so text
            contrast is unchanged — dark ink on near-white, same as before. */
         .app-shell .card {
