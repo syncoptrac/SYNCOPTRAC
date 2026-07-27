@@ -4,43 +4,43 @@ import InstituteLayout from '../../components/layout/InstituteLayout';
 import CountUp from '../../components/ui/CountUp';
 import api, { getUser } from '../../lib/api';
 
-/* Design tokens — palette unchanged */
+/* ────────────────────────────────────────────────────────────────────
+   COMMAND CONSOLE — dark navy glass.
+
+   The old dashboard was white cards on a light grey field, which fought the
+   navy header above it and the navy glass dock below it. This is one deep-navy
+   console panel instead: aurora light behind frosted bento tiles, cyan as the
+   only accent, figures large enough to read at a glance.
+
+   The console is a contained panel rather than a full-bleed background, so the
+   dark treatment cannot leak onto the light table pages (students, fees, etc.)
+   and nothing else in the app needs to change.
+   ─────────────────────────────────────────────────────────────────── */
+
 const C = {
   navy: '#11245d',
+  navyDeep: '#0a1844',
+  navyMid: '#0d1e55',
   navyLight: '#1c2f6e',
   cyan: '#5ce1e6',
-  ink: '#0f172a',
-  sub: '#64748b',
-  faint: '#94a3b8',
-  line: 'rgba(15,23,42,0.07)',
-  card: '#ffffff',
+  text: '#ffffff',
+  dim: 'rgba(198, 214, 248, 0.72)',
+  faint: 'rgba(168, 190, 236, 0.52)',
+  hair: 'rgba(92, 225, 230, 0.14)',
 };
 const EASE = 'cubic-bezier(0.16,1,0.3,1)';
-const SPRING = 'cubic-bezier(0.34,1.56,0.64,1)';
 
-/* Accent sets are pre-computed instead of using color-mix(), which Safari only
-   supports from 16.2 — on older phones the tinted icon wells fell back to
-   transparent. Explicit rgba keeps them identical everywhere. */
-const A = {
-  blue:   { c: '#1a73e8', tint: 'rgba(26,115,232,0.10)',  glow: 'rgba(26,115,232,0.16)',  edge: 'rgba(26,115,232,0.34)' },
-  green:  { c: '#059669', tint: 'rgba(5,150,105,0.10)',   glow: 'rgba(5,150,105,0.16)',   edge: 'rgba(5,150,105,0.34)' },
-  red:    { c: '#dc2626', tint: 'rgba(220,38,38,0.10)',   glow: 'rgba(220,38,38,0.16)',   edge: 'rgba(220,38,38,0.34)' },
-  amber:  { c: '#d97706', tint: 'rgba(217,119,6,0.10)',   glow: 'rgba(217,119,6,0.16)',   edge: 'rgba(217,119,6,0.34)' },
-  violet: { c: '#7c3aed', tint: 'rgba(124,58,237,0.10)',  glow: 'rgba(124,58,237,0.16)',  edge: 'rgba(124,58,237,0.34)' },
-};
+/* Status colours are the ones already in the app — kept only where they carry
+   meaning (paid / overdue), muted for a dark surface. Cyan stays the accent. */
+const OK_GREEN = '#34d399';
+const BAD_RED = '#fca5a5';
+const WARN = '#f0c040';
 
-/* Style helpers (single-brace usage avoids JSX-literal pitfalls) */
 const delay = (s) => ({ animationDelay: s + 's' });
 const wpct = (p) => ({ width: p + '%' });
 const bg = (c) => ({ background: c });
 const segStyle = (p, c) => ({ width: p + '%', background: c });
-const accentCard = (a, i) => ({
-  '--accent': a.c,
-  '--tint': a.tint,
-  '--glow': a.glow,
-  '--edge': a.edge,
-  animationDelay: i * 0.05 + 's',
-});
+const tone = (c, i) => ({ '--tone': c, animationDelay: i * 0.05 + 's' });
 const ringTrans = { transition: 'stroke-dashoffset 1.1s ' + EASE };
 
 export default function InstituteDashboard() {
@@ -94,39 +94,37 @@ export default function InstituteDashboard() {
   })();
   const todayLabel = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
 
-  const R = 34;
+  const R = 32;
   const CIRC = 2 * Math.PI * R;
 
-  /* Each KPI is now a real navigation target — the number you tap takes you to
-     the screen that explains it, which removes a whole hop through the dock. */
   const kpis = [
-    { label: 'Total Students', value: fmt(totalStudents), raw: totalStudents, accent: A.blue,
-      href: '/institute/students',
+    { label: 'Total Students', value: fmt(totalStudents), raw: totalStudents, tone: C.cyan,
+      href: '/institute/students', sub: 'on the register',
       icon: <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/> },
-    { label: 'Present Today', value: fmt(presentToday), raw: presentToday, accent: A.green,
+    { label: 'Present Today', value: fmt(presentToday), raw: presentToday, tone: OK_GREEN,
       href: '/institute/attendance',
       sub: markedToday > 0 ? attendanceRate + '% attendance' : 'Not marked yet',
       icon: <><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></> },
-    { label: 'Absent Today', value: fmt(absentToday), raw: absentToday, accent: A.red,
-      href: '/institute/attendance',
+    { label: 'Absent Today', value: fmt(absentToday), raw: absentToday, tone: BAD_RED,
+      href: '/institute/attendance', sub: markedToday > 0 ? 'of ' + fmt(markedToday) + ' marked' : 'Not marked yet',
       icon: <><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></> },
-    { label: 'Overdue Fees', value: '₹' + fmt(pendingFees), raw: pendingFees, prefix: '₹', accent: A.amber,
+    { label: 'Overdue Fees', value: '₹' + fmt(pendingFees), raw: pendingFees, prefix: '₹', tone: WARN,
       href: '/institute/fees',
       sub: overdueStudents + (overdueStudents === 1 ? ' student overdue' : ' students overdue'),
       icon: <><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></> },
   ];
 
   const quickActions = [
-    { label: 'Add Student',     href: '/institute/students',   accent: A.blue,   icon: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></> },
-    { label: 'Mark Attendance', href: '/institute/attendance', accent: A.green,  icon: <><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></> },
-    { label: 'Update Fees',     href: '/institute/fees',       accent: A.amber,  icon: <><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></> },
-    { label: 'Enquiries',       href: '/institute/enquiries',  accent: A.violet, icon: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/> },
+    { label: 'Add Student',     href: '/institute/students',   icon: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></> },
+    { label: 'Mark Attendance', href: '/institute/attendance', icon: <><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></> },
+    { label: 'Update Fees',     href: '/institute/fees',       icon: <><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></> },
+    { label: 'Enquiries',       href: '/institute/enquiries',  icon: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/> },
   ];
 
   const pipeline = [
-    { label: 'New',       value: newEnquiries,       color: '#1a73e8' },
-    { label: 'Follow-Up', value: followUpEnquiries,  color: '#d97706' },
-    { label: 'Converted', value: convertedEnquiries, color: '#059669' },
+    { label: 'New',       value: newEnquiries,       color: C.cyan },
+    { label: 'Follow-Up', value: followUpEnquiries,  color: WARN },
+    { label: 'Converted', value: convertedEnquiries, color: OK_GREEN },
   ];
 
   const go = (href) => router.push(href);
@@ -134,33 +132,42 @@ export default function InstituteDashboard() {
   if (loading) {
     return (
       <InstituteLayout title="Dashboard">
-        <div className="sk-wrap" role="status" aria-label="Loading dashboard">
-          <div className="sk sk-hero" />
+        <div className="console" role="status" aria-label="Loading dashboard">
+          <span className="aurora a1" aria-hidden="true" />
+          <span className="aurora a2" aria-hidden="true" />
+          <div className="sk sk-head" />
           <div className="sk-grid">
-            {[1,2,3,4].map(i => <div key={i} className="sk sk-card" style={delay(i*0.08)} />)}
+            {[1,2,3,4].map(i => <div key={i} className="sk sk-tile" style={delay(i*0.07)} />)}
           </div>
           <div className="sk-grid two">
-            {[1,2].map(i => <div key={i} className="sk sk-tall" style={delay(i*0.1)} />)}
+            {[1,2].map(i => <div key={i} className="sk sk-wide" style={delay(i*0.09)} />)}
           </div>
         </div>
         <style jsx>{`
-          .sk-wrap { display:flex; flex-direction:column; gap:14px; }
-          /* Sheen sweep reads as "loading" without the harsh opacity blink. */
-          .sk { position:relative; overflow:hidden; background:#fff; border:1px solid ${C.line};
-            box-shadow:0 2px 10px rgba(15,23,42,0.04); }
+          .console { position:relative; overflow:hidden; border-radius:26px; padding:18px;
+            display:flex; flex-direction:column; gap:12px;
+            background: linear-gradient(160deg, ${C.navyDeep} 0%, ${C.navy} 48%, ${C.navyMid} 100%);
+            box-shadow: 0 26px 60px rgba(8,18,52,0.42), inset 0 1px 0 rgba(255,255,255,0.10); }
+          .aurora { position:absolute; border-radius:50%; pointer-events:none; }
+          .a1 { top:-120px; right:-80px; width:320px; height:320px;
+            background: radial-gradient(circle, rgba(92,225,230,0.20), transparent 70%); }
+          .a2 { bottom:-150px; left:-100px; width:300px; height:300px;
+            background: radial-gradient(circle, rgba(92,225,230,0.10), transparent 72%); }
+          .sk { position:relative; overflow:hidden; border-radius:18px;
+            background: rgba(255,255,255,0.055); border:1px solid ${C.hair}; }
           .sk::after { content:''; position:absolute; inset:0; transform:translateX(-100%);
-            background: linear-gradient(90deg, transparent, rgba(17,36,93,0.07), transparent);
+            background: linear-gradient(90deg, transparent, rgba(92,225,230,0.10), transparent);
             animation: sheen 1.4s ${EASE} infinite; }
-          .sk-hero { height:132px; border-radius:22px; }
-          .sk-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
+          .sk-head { height:96px; }
+          .sk-grid { position:relative; display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
           .sk-grid.two { grid-template-columns:1fr; }
-          .sk-card { height:92px; border-radius:18px; }
-          .sk-tall { height:180px; border-radius:20px; }
+          .sk-tile { height:104px; }
+          .sk-wide { height:172px; }
           @keyframes sheen { to { transform:translateX(100%); } }
           @media (min-width:760px){
-            .sk-grid{grid-template-columns:repeat(4,1fr); gap:16px}
-            .sk-grid.two{grid-template-columns:1.35fr 1fr}
-            .sk-card{height:118px}
+            .console { padding:24px; gap:14px; }
+            .sk-grid { grid-template-columns:repeat(4,1fr); gap:14px; }
+            .sk-grid.two { grid-template-columns:1fr 1fr; }
           }
           @media (prefers-reduced-motion: reduce){ .sk::after { animation:none; } }
         `}</style>
@@ -170,137 +177,116 @@ export default function InstituteDashboard() {
 
   return (
     <InstituteLayout title="Dashboard">
-      <div className="dash">
+      <div className="console">
+        <span className="aurora a1" aria-hidden="true" />
+        <span className="aurora a2" aria-hidden="true" />
+        <span className="grid-lines" aria-hidden="true" />
 
-        {/* Greeting hero */}
-        <section className="hero noise-overlay">
-          <span className="hero-glow" aria-hidden="true" />
-          <span className="hero-glow two" aria-hidden="true" />
-          <span className="hero-sheen" aria-hidden="true" />
-
-          <div className="hero-row">
-            <div className="hero-text">
-              <p className="hero-greet">{greeting},</p>
-              <h2 className="hero-name">{user?.instituteName || 'Institute'}</h2>
-              <p className="hero-date">{todayLabel}</p>
-            </div>
-
-            <div className="ring" role="img" aria-label={'Attendance ' + attendanceRate + ' percent'}>
-              <svg viewBox="0 0 80 80" width="80" height="80" aria-hidden="true">
-                <circle cx="40" cy="40" r={R} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="8" />
-                <circle cx="40" cy="40" r={R} fill="none" stroke={C.cyan} strokeWidth="8" strokeLinecap="round"
-                  strokeDasharray={CIRC} strokeDashoffset={CIRC * (1 - attendanceRate / 100)}
-                  transform="rotate(-90 40 40)" style={ringTrans} />
-              </svg>
-              <div className="ring-c">
-                <span className="ring-v"><CountUp value={attendanceRate} suffix="%" /></span>
-                <span className="ring-l">Present</span>
-              </div>
-            </div>
+        {/* ── Console head ── */}
+        <header className="head">
+          <div className="head-text">
+            <p className="greet">{greeting},</p>
+            <h2 className="name">{user?.instituteName || 'Institute'}</h2>
+            <p className="date">
+              <span className="live" aria-hidden="true" />
+              {todayLabel}
+            </p>
           </div>
 
-          {/* At-a-glance strip: the three numbers worth knowing before you tap
-              anything, so the hero stops being decorative dead space. */}
-          <div className="glance">
-            <div className="g-item">
-              <span className="g-v"><CountUp value={collectRate} suffix="%" /></span>
-              <span className="g-l">Fees collected</span>
-            </div>
-            <span className="g-sep" aria-hidden="true" />
-            <div className="g-item">
-              <span className="g-v">{markedToday > 0 ? fmt(markedToday) + '/' + fmt(totalStudents) : '—'}</span>
-              <span className="g-l">Marked today</span>
-            </div>
-            <span className="g-sep" aria-hidden="true" />
-            <div className="g-item">
-              <span className="g-v"><CountUp value={newEnquiries} /></span>
-              <span className="g-l">New enquiries</span>
+          <div className="ring" role="img" aria-label={'Attendance ' + attendanceRate + ' percent'}>
+            <svg viewBox="0 0 76 76" width="76" height="76" aria-hidden="true">
+              <circle cx="38" cy="38" r={R} fill="none" stroke="rgba(255,255,255,0.10)" strokeWidth="6" />
+              <circle cx="38" cy="38" r={R} fill="none" stroke={C.cyan} strokeWidth="6" strokeLinecap="round"
+                strokeDasharray={CIRC} strokeDashoffset={CIRC * (1 - attendanceRate / 100)}
+                transform="rotate(-90 38 38)" style={ringTrans} />
+            </svg>
+            <div className="ring-c">
+              <span className="ring-v"><CountUp value={attendanceRate} suffix="%" /></span>
+              <span className="ring-l">Present</span>
             </div>
           </div>
-        </section>
+        </header>
 
-        {/* KPI cards — now tappable */}
-        <section className="kpis" aria-label="Key figures">
+        {/* ── Bento ── */}
+        <section className="bento" aria-label="Key figures">
           {kpis.map((k, i) => (
             <button
               key={k.label}
               type="button"
-              className="kpi"
-              style={accentCard(k.accent, i)}
+              className="tile kpi"
+              style={tone(k.tone, i)}
               onClick={() => go(k.href)}
               aria-label={k.label + ': ' + k.value}
             >
-              <span className="kpi-bar" aria-hidden="true" />
-              <span className="kpi-ico" aria-hidden="true">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={k.accent.c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{k.icon}</svg>
-              </span>
-              <span className="kpi-body">
-                <span className="kpi-val">
-                  {typeof k.raw === 'number' ? <CountUp value={k.raw} prefix={k.prefix || ''} /> : k.value}
+              <span className="tile-edge" aria-hidden="true" />
+              <span className="kpi-top">
+                <span className="kpi-ico" aria-hidden="true">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={k.tone} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{k.icon}</svg>
                 </span>
                 <span className="kpi-lab">{k.label}</span>
-                {k.sub && <span className="kpi-sub">{k.sub}</span>}
               </span>
+              <span className="kpi-val">
+                {typeof k.raw === 'number' ? <CountUp value={k.raw} prefix={k.prefix || ''} /> : k.value}
+              </span>
+              <span className="kpi-sub">{k.sub}</span>
             </button>
           ))}
-        </section>
 
-        {/* Lower grid */}
-        <section className="lower">
-          {/* Fee overview */}
-          <article className="panel">
-            <header className="panel-h">
+          {/* Fee overview — wide tile */}
+          <article className="tile wide" style={tone(OK_GREEN, 4)}>
+            <span className="tile-edge" aria-hidden="true" />
+            <header className="t-head">
               <h3>Fee Overview</h3>
               <button onClick={() => go('/institute/fees')} className="link">Manage →</button>
             </header>
-            <div className="collect-top">
-              <div>
-                <p className="big">₹<CountUp value={collectedFees} /></p>
-                <p className="muted">collected of ₹{fmt(totalFees)}</p>
-              </div>
-              <span className="pct"><CountUp value={collectRate} suffix="%" /></span>
+            <div className="fee-top">
+              <p className="fee-big">₹<CountUp value={collectedFees} /></p>
+              <span className="fee-pct"><CountUp value={collectRate} suffix="%" /></span>
             </div>
+            <p className="fee-of">collected of ₹{fmt(totalFees)}</p>
             <div className="track" role="img" aria-label={'Fees collected ' + collectRate + ' percent'}>
               <span className="fill" style={wpct(collectRate)} />
             </div>
-            <div className="fee-rows">
-              <div className="fee-row"><span className="dot" style={bg('#059669')} />Paid<b>₹<CountUp value={collectedFees} /></b></div>
-              <div className="fee-row"><span className="dot" style={bg('#dc2626')} />Overdue Students<b><CountUp value={overdueStudents} /></b></div>
+            <div className="rows">
+              <div className="row"><span className="dot" style={bg(OK_GREEN)} />Paid<b>₹<CountUp value={collectedFees} /></b></div>
+              <div className="row"><span className="dot" style={bg(BAD_RED)} />Overdue Students<b><CountUp value={overdueStudents} /></b></div>
             </div>
           </article>
 
-          {/* Enquiry pipeline */}
-          <article className="panel">
-            <header className="panel-h">
+          {/* Enquiry pipeline — wide tile */}
+          <article className="tile wide" style={tone(C.cyan, 5)}>
+            <span className="tile-edge" aria-hidden="true" />
+            <header className="t-head">
               <h3>Enquiry Pipeline</h3>
               <button onClick={() => go('/institute/enquiries')} className="link">View →</button>
             </header>
+            <p className="pipe-total"><CountUp value={enquiryTotal} /> <span>in pipeline</span></p>
             <div className="seg">
               {enquiryTotal > 0
                 ? pipeline.map(p => p.value > 0 && <span key={p.label} style={segStyle((p.value/enquiryTotal)*100, p.color)} />)
-                : <span style={segStyle(100, 'rgba(15,23,42,0.06)')} />}
+                : <span style={segStyle(100, 'rgba(255,255,255,0.08)')} />}
             </div>
-            <div className="pipe-rows">
+            <div className="rows">
               {pipeline.map(p => (
-                <div key={p.label} className="pipe-row">
+                <div key={p.label} className="row">
                   <span className="dot" style={bg(p.color)} />
-                  <span className="pipe-l">{p.label}</span>
+                  {p.label}
                   <b><CountUp value={p.value} /></b>
                 </div>
               ))}
             </div>
-            {enquiryTotal === 0 && <p className="panel-empty">No enquiries yet</p>}
+            {enquiryTotal === 0 && <p className="empty">No enquiries yet</p>}
           </article>
         </section>
 
-        {/* Quick actions */}
+        {/* ── Quick actions ── */}
         <section className="qa-wrap">
-          <h3 className="qa-title">Quick Actions</h3>
+          <p className="qa-title">Quick Actions</p>
           <div className="qa-grid">
             {quickActions.map((a, i) => (
-              <button key={a.label} className="qa" style={accentCard(a.accent, i)} onClick={() => go(a.href)}>
+              <button key={a.label} className="qa" style={delay(i * 0.04)} onClick={() => go(a.href)}>
                 <span className="qa-ico" aria-hidden="true">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={a.accent.c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{a.icon}</svg>
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={C.cyan} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{a.icon}</svg>
                 </span>
                 <span className="qa-l">{a.label}</span>
                 <span className="qa-arrow" aria-hidden="true">→</span>
@@ -311,119 +297,130 @@ export default function InstituteDashboard() {
       </div>
 
       <style jsx>{`
-        .dash { display:flex; flex-direction:column; gap:14px; animation: rise .5s ${EASE} both; }
-        @keyframes rise { from { opacity:0; transform: translateY(8px); } to { opacity:1; transform:none; } }
-        @keyframes pop { from { opacity:0; transform: translateY(10px); } to { opacity:1; transform:none; } }
+        /* ── Console shell ──────────────────────────────────────────────── */
+        .console { position:relative; overflow:hidden; border-radius:26px; padding:18px;
+          display:flex; flex-direction:column; gap:14px;
+          background: linear-gradient(160deg, ${C.navyDeep} 0%, ${C.navy} 48%, ${C.navyMid} 100%);
+          box-shadow: 0 26px 60px rgba(8,18,52,0.42), inset 0 1px 0 rgba(255,255,255,0.10);
+          animation: rise .55s ${EASE} both; }
+        @keyframes rise { from { opacity:0; transform: translateY(10px); } to { opacity:1; transform:none; } }
+        @keyframes pop { from { opacity:0; transform: translateY(12px); } to { opacity:1; transform:none; } }
 
-        /* ── Hero ─────────────────────────────────────────────────────── */
-        .hero { position:relative; overflow:hidden; border-radius:22px; padding:20px 18px 0;
-          background: linear-gradient(135deg, ${C.navy} 0%, ${C.navyLight} 100%);
-          box-shadow: 0 18px 44px rgba(17,36,93,0.30), inset 0 1px 0 rgba(255,255,255,0.14); }
-        .hero-glow { position:absolute; top:-70px; right:-46px; width:230px; height:230px; border-radius:50%;
-          background: radial-gradient(circle, rgba(92,225,230,0.34), transparent 70%); pointer-events:none; }
-        .hero-glow.two { top:auto; bottom:-110px; right:auto; left:-70px; width:220px; height:220px;
-          background: radial-gradient(circle, rgba(92,225,230,0.16), transparent 72%); }
-        .hero-sheen { position:absolute; top:0; left:0; right:0; height:48%; pointer-events:none;
-          background: linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0)); }
+        .aurora { position:absolute; border-radius:50%; pointer-events:none; }
+        .a1 { top:-120px; right:-80px; width:320px; height:320px;
+          background: radial-gradient(circle, rgba(92,225,230,0.22), transparent 70%); }
+        .a2 { bottom:-150px; left:-100px; width:300px; height:300px;
+          background: radial-gradient(circle, rgba(92,225,230,0.11), transparent 72%); }
+        /* Faint engineering grid — the "console" cue, at 3% so it never competes. */
+        .grid-lines { position:absolute; inset:0; pointer-events:none; opacity:.5;
+          background-image:
+            linear-gradient(to right, rgba(92,225,230,0.06) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(92,225,230,0.06) 1px, transparent 1px);
+          background-size: 46px 46px;
+          mask-image: radial-gradient(120% 90% at 50% 0%, #000 30%, transparent 75%);
+          -webkit-mask-image: radial-gradient(120% 90% at 50% 0%, #000 30%, transparent 75%); }
 
-        .hero-row { position:relative; display:flex; align-items:center; justify-content:space-between; gap:14px; }
-        .hero-text { min-width:0; }
-        .hero-greet { color: rgba(255,255,255,0.72); font-size:.82rem; font-weight:500; margin:0; }
-        /* clamp() instead of a breakpoint jump — a long institute name scales
-           down smoothly instead of wrapping into the ring on mid-size phones. */
-        .hero-name { color:#fff; font-size: clamp(1.28rem, 5.4vw, 1.75rem); font-weight:800; margin:3px 0 5px;
-          letter-spacing:-0.02em; line-height:1.12; overflow-wrap:anywhere; }
-        .hero-date { color: rgba(255,255,255,0.6); font-size:.78rem; margin:0; }
+        /* ── Head ────────────────────────────────────────────────────── */
+        .head { position:relative; display:flex; align-items:center; justify-content:space-between; gap:14px;
+          padding-bottom:14px; border-bottom:1px solid ${C.hair}; }
+        .head-text { min-width:0; }
+        .greet { color:${C.faint}; font-size:.78rem; font-weight:500; margin:0; letter-spacing:.01em; }
+        .name { color:${C.text}; font-size: clamp(1.35rem, 5.6vw, 2rem); font-weight:800; margin:4px 0 6px;
+          letter-spacing:-0.025em; line-height:1.08; overflow-wrap:anywhere;
+          text-shadow: 0 2px 18px rgba(92,225,230,0.14); }
+        .date { display:flex; align-items:center; gap:7px; color:${C.dim}; font-size:.76rem; margin:0; }
+        .live { width:6px; height:6px; border-radius:50%; background:${C.cyan}; flex-shrink:0;
+          box-shadow:0 0 0 3px rgba(92,225,230,0.18); animation: beat 2.4s ease-in-out infinite; }
+        @keyframes beat { 0%,100%{opacity:1} 50%{opacity:.35} }
 
-        .ring { position:relative; flex-shrink:0; width:80px; height:80px; }
+        .ring { position:relative; flex-shrink:0; width:76px; height:76px;
+          filter: drop-shadow(0 0 12px rgba(92,225,230,0.22)); }
         .ring-c { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
-        .ring-v { color:#fff; font-size:1.05rem; font-weight:800; line-height:1; font-variant-numeric: tabular-nums; }
-        .ring-l { color: rgba(255,255,255,0.62); font-size:.6rem; text-transform:uppercase; letter-spacing:.08em; margin-top:2px; }
+        .ring-v { color:${C.text}; font-size:1.02rem; font-weight:800; line-height:1; font-variant-numeric: tabular-nums; }
+        .ring-l { color:${C.faint}; font-size:.56rem; text-transform:uppercase; letter-spacing:.1em; margin-top:3px; }
 
-        .glance { position:relative; display:flex; align-items:stretch; gap:2px; margin:18px -18px 0;
-          padding:12px 6px calc(12px + env(safe-area-inset-bottom, 0px)); border-top:1px solid rgba(255,255,255,0.12);
-          background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02)); }
-        .g-item { flex:1 1 0; min-width:0; display:flex; flex-direction:column; align-items:center; gap:3px; padding:0 4px; }
-        .g-v { color:#fff; font-size:.95rem; font-weight:800; letter-spacing:-0.01em; font-variant-numeric: tabular-nums; }
-        .g-l { color: rgba(255,255,255,0.58); font-size:.63rem; font-weight:500; text-align:center;
-          white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
-        .g-sep { width:1px; background: rgba(255,255,255,0.12); flex-shrink:0; }
+        /* ── Bento tiles ──────────────────────────────────────────────── */
+        .bento { position:relative; display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
+        .tile { position:relative; overflow:hidden; border-radius:18px; padding:14px 13px;
+          background: linear-gradient(180deg, rgba(255,255,255,0.075), rgba(255,255,255,0.028));
+          border:1px solid ${C.hair};
+          backdrop-filter: blur(14px) saturate(150%); -webkit-backdrop-filter: blur(14px) saturate(150%);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.10), 0 10px 26px rgba(6,14,40,0.24);
+          animation: pop .5s ${EASE} both; }
+        /* Hairline of the tile's own tone along the top edge. */
+        .tile-edge { position:absolute; top:0; left:14px; right:14px; height:1px;
+          background: linear-gradient(90deg, transparent, var(--tone), transparent); opacity:.75; }
+        .wide { grid-column: span 2; }
 
-        /* ── KPI cards ────────────────────────────────────────────────── */
-        /* Mobile is a compact ROW (icon beside the number). The old stacked
-           layout made these ~150px tall on a 360px screen, so two rows of
-           cards ate the whole viewport before any content showed. */
-        .kpis { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
-        .kpi { position:relative; overflow:hidden; display:flex; align-items:center; gap:11px; width:100%;
-          min-height:44px; padding:13px 12px; text-align:left; cursor:pointer; -webkit-tap-highlight-color:transparent;
-          background:${C.card}; border:1px solid ${C.line}; border-radius:18px;
-          box-shadow:0 2px 10px rgba(15,23,42,0.04);
-          transition: transform .28s ${EASE}, box-shadow .28s ${EASE}, border-color .28s ${EASE};
-          animation: pop .45s ${EASE} both; }
-        .kpi-bar { position:absolute; top:0; left:0; right:0; height:3px; background: linear-gradient(90deg, var(--accent), transparent); }
-        .kpi-ico { width:38px; height:38px; border-radius:12px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
-          background: var(--tint); }
-        .kpi-body { display:flex; flex-direction:column; min-width:0; }
-        .kpi-val { font-size: clamp(1.12rem, 4.6vw, 1.5rem); font-weight:800; color:${C.ink}; letter-spacing:-0.02em;
-          line-height:1.15; font-variant-numeric: tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .kpi-lab { font-size:.74rem; color:${C.sub}; font-weight:600; margin-top:1px;
+        .kpi { display:flex; flex-direction:column; align-items:flex-start; gap:0; width:100%; text-align:left;
+          cursor:pointer; min-height:44px; -webkit-tap-highlight-color:transparent;
+          transition: transform .28s ${EASE}, border-color .28s ${EASE}, box-shadow .28s ${EASE}; }
+        .kpi-top { display:flex; align-items:center; gap:7px; min-width:0; width:100%; }
+        .kpi-ico { width:26px; height:26px; border-radius:9px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
+          background: rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.08); }
+        .kpi-lab { color:${C.dim}; font-size:.68rem; font-weight:600; letter-spacing:.02em;
           white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .kpi-sub { font-size:.67rem; color:${C.faint}; margin-top:3px;
-          white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .kpi-val { color:${C.text}; font-size: clamp(1.5rem, 7vw, 2.1rem); font-weight:800; letter-spacing:-0.03em;
+          line-height:1.05; margin-top:10px; font-variant-numeric: tabular-nums;
+          max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .kpi-sub { color:${C.faint}; font-size:.65rem; margin-top:4px;
+          max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-        /* ── Panels ───────────────────────────────────────────────────── */
-        .lower { display:grid; grid-template-columns:1fr; gap:14px; }
-        .panel { background:${C.card}; border:1px solid ${C.line}; border-radius:20px; padding:16px;
-          box-shadow:0 2px 10px rgba(15,23,42,0.04); }
-        .panel-h { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:14px; }
-        .panel-h h3 { font-size:.95rem; font-weight:700; color:${C.ink}; margin:0; }
-        /* 44px tap target without visually enlarging the link. */
-        .link { background:none; border:none; color:#1a73e8; font-size:.78rem; font-weight:600; cursor:pointer;
-          padding:6px 2px; margin:-6px -2px; border-radius:8px; flex-shrink:0; -webkit-tap-highlight-color:transparent; }
-        .panel-empty { text-align:center; color:${C.faint}; font-size:.8rem; margin:12px 0 0; }
+        .t-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; }
+        .t-head h3 { color:${C.text}; font-size:.88rem; font-weight:700; margin:0; letter-spacing:.01em; }
+        .link { background:rgba(255,255,255,0.07); border:1px solid ${C.hair}; color:${C.cyan};
+          font-size:.72rem; font-weight:700; cursor:pointer; padding:6px 10px; border-radius:9px; flex-shrink:0;
+          -webkit-tap-highlight-color:transparent; transition: background .2s ease, transform .2s ${EASE}; }
+        .link:active { transform: scale(0.96); }
 
-        .collect-top { display:flex; align-items:flex-end; justify-content:space-between; gap:10px; }
-        .big { font-size: clamp(1.25rem, 5vw, 1.5rem); font-weight:800; color:#059669; margin:0; letter-spacing:-0.02em;
+        .fee-top { display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+        .fee-big { color:${C.text}; font-size: clamp(1.5rem, 6.4vw, 1.9rem); font-weight:800; margin:0;
+          letter-spacing:-0.03em; font-variant-numeric: tabular-nums; }
+        .fee-pct { color:${OK_GREEN}; font-size:1rem; font-weight:800; flex-shrink:0; font-variant-numeric: tabular-nums; }
+        .fee-of { color:${C.faint}; font-size:.7rem; margin:3px 0 0; }
+        .track { height:8px; border-radius:99px; background:rgba(255,255,255,0.08); overflow:hidden; margin:12px 0 13px; }
+        .fill { display:block; height:100%; border-radius:99px;
+          background: linear-gradient(90deg, ${C.cyan}, ${OK_GREEN});
+          box-shadow: 0 0 12px rgba(92,225,230,0.35); transition: width 1.1s ${EASE}; }
+
+        .pipe-total { color:${C.text}; font-size:1.5rem; font-weight:800; margin:0 0 11px; letter-spacing:-0.02em;
           font-variant-numeric: tabular-nums; }
-        .muted { font-size:.74rem; color:${C.faint}; margin:2px 0 0; }
-        .pct { font-size:1rem; font-weight:800; color:#059669; font-variant-numeric: tabular-nums; flex-shrink:0; }
-        .track { height:9px; border-radius:99px; background:rgba(15,23,42,0.06); overflow:hidden; margin:12px 0 14px; }
-        .fill { display:block; height:100%; border-radius:99px; background: linear-gradient(90deg,#10b981,#059669);
-          transition: width 1.1s ${EASE}; }
-        .fee-rows { display:flex; flex-direction:column; gap:9px; }
-        .fee-row, .pipe-row { display:flex; align-items:center; gap:8px; font-size:.82rem; color:${C.sub}; }
-        .fee-row b, .pipe-row b { margin-left:auto; color:${C.ink}; font-weight:700; font-variant-numeric: tabular-nums; }
-        .dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
-
-        .seg { display:flex; height:11px; border-radius:99px; overflow:hidden; margin-bottom:14px; background:rgba(15,23,42,0.06); }
+        .pipe-total span { color:${C.faint}; font-size:.7rem; font-weight:500; letter-spacing:0; }
+        .seg { display:flex; height:8px; border-radius:99px; overflow:hidden; margin-bottom:13px; background:rgba(255,255,255,0.08); }
         .seg span { transition: width 1.1s ${EASE}; }
-        .pipe-rows { display:flex; flex-direction:column; gap:9px; }
-        .pipe-l { color:${C.sub}; }
 
-        /* ── Quick actions ────────────────────────────────────────────── */
-        .qa-title { font-size:.95rem; font-weight:700; color:${C.ink}; margin:2px 0 11px; }
-        .qa-grid { display:grid; grid-template-columns:1fr; gap:10px; }
-        .qa { display:flex; align-items:center; gap:11px; padding:13px; border-radius:16px; cursor:pointer; text-align:left;
-          min-height:52px; -webkit-tap-highlight-color:transparent;
-          background:${C.card}; border:1px solid ${C.line}; font-size:.85rem; font-weight:600; color:${C.ink};
-          box-shadow:0 2px 8px rgba(15,23,42,0.04);
-          transition: transform .25s ${EASE}, box-shadow .25s ${EASE}, border-color .25s ${EASE};
-          animation: pop .45s ${EASE} both; }
-        .qa-ico { width:36px; height:36px; border-radius:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0;
-          background: var(--tint); }
-        .qa-l { flex:1; min-width:0; }
-        .qa-arrow { color:${C.faint}; font-size:.9rem; flex-shrink:0;
-          transition: transform .25s ${EASE}, color .25s ${EASE}; }
+        .rows { display:flex; flex-direction:column; gap:9px; }
+        .row { display:flex; align-items:center; gap:8px; font-size:.78rem; color:${C.dim}; }
+        .row b { margin-left:auto; color:${C.text}; font-weight:700; font-variant-numeric: tabular-nums; }
+        .dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+        .empty { color:${C.faint}; font-size:.75rem; text-align:center; margin:10px 0 0; }
+
+        /* ── Quick actions ───────────────────────────────────────────── */
+        .qa-wrap { position:relative; }
+        .qa-title { color:${C.faint}; font-size:.65rem; font-weight:700; text-transform:uppercase; letter-spacing:.12em;
+          margin:2px 0 10px; }
+        .qa-grid { display:grid; grid-template-columns:1fr; gap:9px; }
+        .qa { display:flex; align-items:center; gap:10px; padding:12px 13px; border-radius:15px; cursor:pointer; text-align:left;
+          min-height:50px; width:100%; -webkit-tap-highlight-color:transparent;
+          background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.025));
+          border:1px solid ${C.hair}; color:${C.text}; font-size:.82rem; font-weight:600;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+          animation: pop .5s ${EASE} both;
+          transition: transform .25s ${EASE}, border-color .25s ${EASE}, box-shadow .25s ${EASE}; }
+        .qa-ico { width:30px; height:30px; border-radius:10px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
+          background: rgba(92,225,230,0.12); border:1px solid rgba(92,225,230,0.18); }
+        .qa-l { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .qa-arrow { color:${C.faint}; flex-shrink:0; transition: transform .25s ${EASE}, color .25s ${EASE}; }
 
         /* ── Interaction ──────────────────────────────────────────────── */
-        /* Press feedback works on touch; lift/hover is gated to real pointers
-           so a phone tap never leaves a card stuck in its hover state. */
         .kpi:active, .qa:active { transform: scale(0.975); }
         @media (hover: hover) and (pointer: fine) {
-          .kpi:hover { transform: translateY(-4px); border-color: var(--edge); box-shadow:0 16px 34px var(--glow); }
-          .qa:hover { transform: translateY(-3px); border-color: var(--edge); box-shadow:0 12px 26px var(--glow); }
-          .qa:hover .qa-arrow { transform: translateX(3px); color: var(--accent); }
-          .link:hover { text-decoration:underline; }
+          .kpi:hover { transform: translateY(-4px); border-color: rgba(92,225,230,0.34);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.14), 0 18px 38px rgba(6,14,40,0.4), 0 0 0 1px rgba(92,225,230,0.12); }
+          .qa:hover { transform: translateY(-3px); border-color: rgba(92,225,230,0.34);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.14), 0 14px 30px rgba(6,14,40,0.36); }
+          .qa:hover .qa-arrow { transform: translateX(4px); color:${C.cyan}; }
+          .link:hover { background: rgba(92,225,230,0.16); }
         }
         .kpi:focus-visible, .qa:focus-visible, .link:focus-visible {
           outline:2px solid ${C.cyan}; outline-offset:2px; }
@@ -433,25 +430,19 @@ export default function InstituteDashboard() {
           .qa-grid { grid-template-columns:repeat(2,1fr); }
         }
         @media (min-width:760px){
-          .dash { gap:16px; }
-          .hero { padding:24px 22px 0; }
-          .glance { margin:20px -22px 0; padding:14px 10px; gap:4px; }
-          .g-v { font-size:1.05rem; }
-          .g-l { font-size:.68rem; }
-          /* Desktop restores the taller stacked card — there is room for it. */
-          .kpis { grid-template-columns:repeat(4,1fr); gap:16px; }
-          .kpi { flex-direction:column; align-items:flex-start; gap:0; padding:16px; }
-          .kpi-ico { margin-bottom:12px; }
-          .kpi-lab { font-size:.78rem; }
-          .kpi-sub { font-size:.7rem; }
-          .lower { grid-template-columns:1.35fr 1fr; }
-          .panel { padding:18px; }
+          .console { padding:26px; gap:18px; border-radius:30px; }
+          .head { padding-bottom:18px; }
+          .bento { grid-template-columns:repeat(4,1fr); gap:14px; }
+          .tile { padding:18px 17px; border-radius:20px; }
+          .kpi-lab { font-size:.72rem; }
+          .kpi-sub { font-size:.68rem; }
+          .ring { width:92px; height:92px; }
           .qa-grid { grid-template-columns:repeat(4,1fr); gap:12px; }
         }
 
         @media (prefers-reduced-motion: reduce){
-          .dash, .kpi, .qa { animation:none; }
-          .fill, .seg span, .qa-arrow { transition:none; }
+          .console, .tile, .qa { animation:none; }
+          .fill, .seg span, .qa-arrow, .live { transition:none; animation:none; }
           .kpi:active, .qa:active { transform:none; }
         }
       `}</style>
