@@ -1,6 +1,7 @@
 import { useRouter } from 'next/router';
 import { clearAuth, getUser } from '../../lib/api';
 import LiquidDock from '../ui/LiquidDock';
+import DesignSystem from '../ds/DesignSystem';
 
 const NAV = [
   { href: '/admin/dashboard', label: 'Dashboard', icon: (
@@ -25,12 +26,14 @@ export default function AdminLayout({ children, title }) {
   };
 
   return (
-    <div className="app-shell" style={{
+    <div className="app-shell sc-app" style={{
       display: 'flex',
       flexDirection: 'column',
-      background: '#f0f4ff',
+      background: '#F8FAFC',
       overflow: 'hidden',
     }}>
+
+      <DesignSystem />
 
       {/* ── Top Header ─────────────────────────────────────────────── */}
       <header className="noise-overlay" style={{
@@ -90,7 +93,7 @@ export default function AdminLayout({ children, title }) {
 
       {/* ── Scrollable content ──────────────────────────────────────── */}
       <main style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
-        <div style={{ padding: '16px', maxWidth: 1200, margin: '0 auto' }}>
+        <div style={{ padding: '22px 18px 12px', maxWidth: 1240, margin: '0 auto' }}>
           {children}
         </div>
       </main>

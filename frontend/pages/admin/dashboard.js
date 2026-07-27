@@ -3,46 +3,38 @@ import { useRouter } from 'next/router';
 import AdminLayout from '../../components/layout/AdminLayout';
 import CountUp from '../../components/ui/CountUp';
 import api, { getUser } from '../../lib/api';
+import { T } from '../../components/ds/tokens';
 
-/* ────────────────────────────────────────────────────────────────────
-   COMMAND CONSOLE — dark navy glass. Matches the institute console so both
-   portals read as one product. Palette: navy + cyan, with the app's existing
-   status colours kept only where they carry meaning (paid / overdue / pending).
+/* ==========================================================================
+   ADMIN DASHBOARD - "Workbench"
 
-   Contained panel, not a full-bleed background, so the dark treatment cannot
-   leak onto the light table pages (institutes, leads).
-   ─────────────────────────────────────────────────────────────────── */
+   Same design language as the institute dashboard so both portals read as one
+   product: bright canvas, hairline masthead, white cards, one accent.
 
-const C = {
-  navy: '#11245d',
-  navyDeep: '#0a1844',
-  navyMid: '#0d1e55',
-  cyan: '#5ce1e6',
-  text: '#ffffff',
-  dim: 'rgba(198, 214, 248, 0.72)',
-  faint: 'rgba(168, 190, 236, 0.52)',
-  hair: 'rgba(92, 225, 230, 0.14)',
-};
-const EASE = 'cubic-bezier(0.16,1,0.3,1)';
+   Where it differs on purpose - this screen is an operator's console, so it
+   leads with a 6-up KPI rail and gives revenue its own emphasised card. The
+   institute screen leads with money because that is its job; this one leads
+   with fleet health.
+
+   Every piece of state, every handler, both endpoints, the month picker
+   behaviour and all copy are carried over unchanged.
+   ========================================================================== */
+
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-const OK_GREEN = '#34d399';
-const BAD_RED = '#fca5a5';
-const WARN = '#f0c040';
-
-/* Status chips — same three states, retuned for a dark surface. */
+/* Status chips - bright surface values from the shared token set. */
 const STATUS_STYLE = {
-  paid:    { bg: 'rgba(52,211,153,0.14)', text: '#34d399', label: 'Paid' },
-  overdue: { bg: 'rgba(252,165,165,0.14)', text: '#fca5a5', label: 'Overdue' },
-  pending: { bg: 'rgba(240,192,64,0.14)',  text: '#f0c040', label: 'Pending' },
+  paid:    { bg: 'rgba(34,197,94,0.12)',  text: '#15803D', label: 'Paid' },
+  overdue: { bg: 'rgba(239,68,68,0.12)',  text: '#B91C1C', label: 'Overdue' },
+  pending: { bg: 'rgba(245,158,11,0.14)', text: '#B45309', label: 'Pending' },
 };
 
 const delay = (s) => ({ animationDelay: s + 's' });
-const tone = (c, i) => ({ '--tone': c, animationDelay: i * 0.05 + 's' });
+const toneVars = (c, tint) => ({ '--sc-tone': c, '--sc-tone-tint': tint });
 const chipStyle = (s) => ({ background: s.bg, color: s.text });
 const monthCell = (isSel) => ({
-  background: isSel ? C.cyan : 'transparent',
-  color: isSel ? C.navyDeep : '#fff',
+  background: isSel ? T.accent : 'transparent',
+  color: isSel ? '#fff' : T.text,
   fontWeight: isSel ? 800 : 600,
 });
 
@@ -115,7 +107,7 @@ export default function AdminDashboard() {
     } finally { setLoading(false); }
   };
 
-  const fmt = (n) => n?.toLocaleString('en-IN') ?? '—';
+  const fmt = (n) => n?.toLocaleString('en-IN') ?? '\u2014';
 
   const greeting = (() => {
     const h = new Date().getHours();
@@ -126,22 +118,22 @@ export default function AdminDashboard() {
   const todayLabel = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
   const kpis = [
-    { label: 'Active Institutes', value: fmt(stats?.activeInstitutes), raw: stats?.activeInstitutes, tone: C.cyan,
+    { label: 'Active Institutes', value: fmt(stats?.activeInstitutes), raw: stats?.activeInstitutes, tone: T.accent, tint: T.accentTint,
       href: '/admin/institutes',
       icon: <><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-3"/></> },
-    { label: 'Total Institutes', value: fmt(stats?.totalInstitutes), raw: stats?.totalInstitutes, tone: '#8ab4f8',
+    { label: 'Total Institutes', value: fmt(stats?.totalInstitutes), raw: stats?.totalInstitutes, tone: T.accent2, tint: 'rgba(59,130,246,0.10)',
       href: '/admin/institutes',
       icon: <><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></> },
-    { label: 'New Requests', value: fmt(stats?.newLeads), raw: stats?.newLeads, tone: '#c4b5fd',
+    { label: 'New Requests', value: fmt(stats?.newLeads), raw: stats?.newLeads, tone: T.navy, tint: T.navyTint,
       href: '/admin/leads',
       icon: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></> },
-    { label: "This Month's Overdue", value: '₹' + fmt(stats?.overduePayments), raw: stats?.overduePayments, prefix: '₹', tone: BAD_RED,
+    { label: "This Month's Overdue", value: '\u20b9' + fmt(stats?.overduePayments), raw: stats?.overduePayments, prefix: '\u20b9', tone: T.danger, tint: T.dangerTint,
       href: '/admin/institutes',
       icon: <><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></> },
-    { label: 'Lifetime Revenue', value: '₹' + fmt(stats?.totalRevenue), raw: stats?.totalRevenue, prefix: '₹', tone: OK_GREEN,
+    { label: 'Lifetime Revenue', value: '\u20b9' + fmt(stats?.totalRevenue), raw: stats?.totalRevenue, prefix: '\u20b9', tone: T.success, tint: T.successTint,
       href: '/admin/institutes',
       icon: <><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></> },
-    { label: 'New This Month', value: fmt(stats?.newInstitutesThisMonth), raw: stats?.newInstitutesThisMonth, tone: '#7dd3fc',
+    { label: 'New This Month', value: fmt(stats?.newInstitutesThisMonth), raw: stats?.newInstitutesThisMonth, tone: T.warning, tint: T.warningTint,
       href: '/admin/institutes',
       icon: <><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09zM12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/></> },
   ];
@@ -158,47 +150,35 @@ export default function AdminDashboard() {
   if (loading) {
     return (
       <AdminLayout title="Dashboard">
-        <div className="console" role="status" aria-label="Loading dashboard">
-          <span className="aurora a1" aria-hidden="true" />
-          <span className="aurora a2" aria-hidden="true" />
-          <div className="sk sk-head" />
-          <div className="sk-grid">
-            {[1,2,3,4,5,6].map(i => <div key={i} className="sk sk-card" style={delay(i*0.06)} />)}
+        <div role="status" aria-label="Loading dashboard" className="wrap">
+          <div className="sk-mast">
+            <div className="sc-skel sc-skel-text" style={{ width: 110 }} />
+            <div className="sc-skel sc-skel-text" style={{ width: 210, height: 26, marginTop: 10 }} />
+            <div className="sc-skel sc-skel-text" style={{ width: 180, marginTop: 10 }} />
           </div>
-          <div className="sk sk-rev" />
-          <div className="sk-grid two">
-            {[1,2].map(i => <div key={i} className="sk sk-wide" style={delay(i*0.09)} />)}
+          <div className="grid-kpi">
+            {[1,2,3,4,5,6].map(i => <div key={i} className="sc-skel sk-stat" style={delay(i*0.06)} />)}
+          </div>
+          <div className="sc-skel sk-rev" />
+          <div className="grid-bottom">
+            {[1,2].map(i => <div key={i} className="sc-skel sk-panel" style={delay(i*0.09)} />)}
           </div>
         </div>
         <style jsx>{`
-          .console { position:relative; overflow:hidden; border-radius:26px; padding:18px;
-            display:flex; flex-direction:column; gap:12px;
-            background: linear-gradient(160deg, ${C.navyDeep} 0%, ${C.navy} 48%, ${C.navyMid} 100%);
-            box-shadow: 0 26px 60px rgba(8,18,52,0.42), inset 0 1px 0 rgba(255,255,255,0.10); }
-          .aurora { position:absolute; border-radius:50%; pointer-events:none; }
-          .a1 { top:-120px; right:-80px; width:320px; height:320px;
-            background: radial-gradient(circle, rgba(92,225,230,0.20), transparent 70%); }
-          .a2 { bottom:-150px; left:-100px; width:300px; height:300px;
-            background: radial-gradient(circle, rgba(92,225,230,0.10), transparent 72%); }
-          .sk { position:relative; overflow:hidden; border-radius:18px;
-            background: rgba(255,255,255,0.055); border:1px solid ${C.hair}; }
-          .sk::after { content:''; position:absolute; inset:0; transform:translateX(-100%);
-            background: linear-gradient(90deg, transparent, rgba(92,225,230,0.10), transparent);
-            animation: sheen 1.4s ${EASE} infinite; }
-          .sk-head { height:96px; }
-          .sk-grid { position:relative; display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
-          .sk-grid.two { grid-template-columns:1fr; }
-          .sk-card { height:98px; }
-          .sk-rev { height:120px; border-radius:20px; }
-          .sk-wide { height:200px; }
-          @keyframes sheen { to { transform:translateX(100%); } }
-          @media (min-width:760px){
-            .console { padding:24px; gap:14px; }
-            .sk-grid { grid-template-columns:repeat(3,1fr); gap:14px; }
-            .sk-grid.two { grid-template-columns:1.6fr 1fr; }
-            .sk-card { height:110px; }
+          .wrap { display: flex; flex-direction: column; gap: 22px; }
+          .sk-mast { padding-bottom: 18px; border-bottom: 1px solid ${T.border}; }
+          .grid-kpi { display: grid; gap: 14px; grid-template-columns: repeat(2, 1fr); }
+          .grid-bottom { display: grid; gap: 14px; grid-template-columns: 1fr; }
+          .sk-stat { height: 112px; }
+          .sk-rev { height: 150px; }
+          .sk-panel { height: 250px; }
+          @media (min-width: 900px) {
+            .grid-kpi { grid-template-columns: repeat(3, 1fr); gap: 16px; }
+            .grid-bottom { grid-template-columns: 1.6fr 1fr; gap: 16px; }
           }
-          @media (prefers-reduced-motion: reduce){ .sk::after { animation:none; } }
+          @media (min-width: 1140px) {
+            .grid-kpi { grid-template-columns: repeat(6, 1fr); }
+          }
         `}</style>
       </AdminLayout>
     );
@@ -206,99 +186,118 @@ export default function AdminDashboard() {
 
   return (
     <AdminLayout title="Dashboard">
-      <div className="console">
-        <span className="aurora a1" aria-hidden="true" />
-        <span className="aurora a2" aria-hidden="true" />
-        <span className="grid-lines" aria-hidden="true" />
+      <div className="wrap">
 
         {dbOffline && (
-          <div className="offline" role="alert">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={BAD_RED} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <div className="sc-notice sc-notice-warn" role="alert">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
             Database is offline. Some data may not be available.
           </div>
         )}
 
-        {/* ── Console head ── */}
-        <header className="head">
-          <div className="head-text">
-            <p className="greet">{greeting}, Admin</p>
-            <h2 className="name">Control Center</h2>
-            <p className="date">
-              <span className="live" aria-hidden="true" />
-              {todayLabel}
-            </p>
+        {/* ---- Masthead ------------------------------------------------- */}
+        <header className="sc-mast">
+          <div className="sc-mast-l">
+            <p className="sc-eyebrow">{greeting}</p>
+            <h1 className="sc-h1 name">Control Center</h1>
+            <p className="sc-dim date">{todayLabel}</p>
           </div>
-
-          <div className="rev-badge">
-            <p className="rb-l">Lifetime Revenue</p>
-            <p className="rb-v">₹<CountUp value={stats?.totalRevenue || 0} /></p>
-            <p className="rb-s"><CountUp value={stats?.activeInstitutes || 0} /> active institutes</p>
+          <div className="sc-mast-r">
+            <div className="rev-badge">
+              <span className="rb-l">Lifetime Revenue</span>
+              <span className="rb-v sc-num">&#8377;{fmt(stats?.totalRevenue)}</span>
+            </div>
+            <button className="sc-btn sc-btn-primary" onClick={() => router.push('/admin/institutes?action=new')}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              Add Institute
+            </button>
           </div>
         </header>
 
-        {/* ── Bento ── */}
-        <section className="bento" aria-label="Key figures">
+        {/* ---- KPI rail ------------------------------------------------- */}
+        <section className="grid-kpi" aria-label="Key figures">
           {kpis.map((k, i) => (
             <button
               key={k.label}
-              type="button"
-              className="tile kpi"
-              style={tone(k.tone, i)}
+              className="sc-card sc-i sc-stat"
+              style={{ ...toneVars(k.tone, k.tint), ...delay(i * 0.045) }}
               onClick={() => router.push(k.href)}
-              aria-label={k.label + ': ' + k.value}
+              aria-label={k.label}
             >
-              <span className="tile-edge" aria-hidden="true" />
-              <span className="kpi-top">
-                <span className="kpi-ico" aria-hidden="true">
-                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={k.tone} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{k.icon}</svg>
+              <span className="sc-edge" aria-hidden="true" />
+              <span className="sc-stat-top">
+                <span className="sc-eyebrow">{k.label}</span>
+                <span className="sc-ico" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{k.icon}</svg>
                 </span>
-                <span className="kpi-lab">{k.label}</span>
               </span>
-              <span className="kpi-val">
-                {typeof k.raw === 'number' ? <CountUp value={k.raw} prefix={k.prefix || ''} /> : k.value}
+              <span className="sc-stat-val sc-num">
+                {typeof k.raw === 'number'
+                  ? <CountUp value={k.raw} prefix={k.prefix || ''} />
+                  : k.value}
               </span>
             </button>
           ))}
         </section>
 
-        {/* ── Monthly revenue ── */}
-        <section className="rev-card">
-          <span className="rev-glow" aria-hidden="true" />
+        {/* ---- Monthly revenue ------------------------------------------ */}
+        <section className="sc-card sc-card-lg rev-card">
           <div className="rev-head">
-            <p className="rev-title">Monthly Revenue</p>
+            <div>
+              <p className="sc-eyebrow">Monthly Revenue</p>
+              <p className="rev-value sc-num">
+                {monthLoading
+                  ? <span className="rev-load" aria-label="Loading revenue">&#8377;&#8202;&mdash;</span>
+                  : <>&#8377;{fmt(monthRevenue?.revenue ?? 0)}</>}
+              </p>
+              <p className="rev-sub">{selectedLabel}</p>
+            </div>
+
+            {/* Month picker. Behaviour is unchanged: click-outside via
+                [data-month-picker], Escape to dismiss. */}
             <div className="picker" data-month-picker>
               <button
-                className="picker-btn"
-                onClick={() => setShowMonthPicker(p => !p)}
-                aria-haspopup="dialog"
+                className="sc-btn sc-btn-secondary sc-btn-sm"
+                onClick={() => setShowMonthPicker(v => !v)}
                 aria-expanded={showMonthPicker}
+                aria-haspopup="dialog"
               >
-                {selectedLabel} <span className="caret" aria-hidden="true">▾</span>
+                {selectedLabel}
+                <svg className={'caret' + (showMonthPicker ? ' up' : '')} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <polyline points="6 9 12 15 18 9"/>
+                </svg>
               </button>
 
               {showMonthPicker && (
                 <>
-                  {/* Scrim only on phones, where the popover becomes a centred
-                      sheet instead of a box that could hang off a 360px screen. */}
                   <span className="picker-scrim" aria-hidden="true" />
-                  <div className="picker-pop" role="dialog" aria-label="Choose month">
+                  <div className="picker-pop" role="dialog" aria-label="Select month">
                     <div className="picker-yr">
-                      <button onClick={() => setPickerYear(y => y - 1)} className="yr-nav" aria-label="Previous year">‹</button>
-                      <span>{pickerYear}</span>
-                      <button onClick={() => setPickerYear(y => y + 1)} className="yr-nav" aria-label="Next year">›</button>
+                      <button className="yr-nav" onClick={() => setPickerYear(y => y - 1)} aria-label="Previous year">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                      </button>
+                      <span className="sc-num">{pickerYear}</span>
+                      <button className="yr-nav" onClick={() => setPickerYear(y => y + 1)} aria-label="Next year">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                      </button>
                     </div>
                     <div className="picker-grid">
-                      {MONTHS.map((m, i) => {
-                        const val = `${pickerYear}-${String(i + 1).padStart(2, '0')}`;
-                        const isSel = val === selectedMonth;
+                      {MONTHS.map((m, idx) => {
+                        const isSel = selectedMonth === `${pickerYear}-${String(idx + 1).padStart(2, '0')}`;
                         return (
                           <button
                             key={m}
                             className="month-cell"
                             style={monthCell(isSel)}
-                            onClick={() => handleMonthSelect(pickerYear, i)}
+                            onClick={() => handleMonthSelect(pickerYear, idx)}
                             aria-pressed={isSel}
-                          >{m}</button>
+                          >
+                            {m}
+                          </button>
                         );
                       })}
                     </div>
@@ -307,260 +306,214 @@ export default function AdminDashboard() {
               )}
             </div>
           </div>
-
-          <p className="rev-value">
-            {monthLoading ? <span className="rev-dots" aria-label="Loading">…</span> : <>₹<CountUp value={monthRevenue?.revenue ?? stats?.monthlyRevenue ?? 0} /></>}
-          </p>
-          <p className="rev-sub">
-            {monthRevenue ? `${monthRevenue.paidCount ?? 0} paid institute${(monthRevenue.paidCount ?? 0) !== 1 ? 's' : ''} in ${selectedLabel}` : `Revenue for ${selectedLabel}`}
-          </p>
         </section>
 
-        {/* ── Bottom ── */}
-        <section className="bottom">
-          <article className="tile panel" style={tone(C.cyan, 0)}>
-            <span className="tile-edge" aria-hidden="true" />
-            <header className="t-head">
-              <h3>Recent Institutes</h3>
-              <button className="link" onClick={() => router.push('/admin/institutes')}>View all →</button>
-            </header>
+        {/* ---- Recent institutes + quick actions ------------------------ */}
+        <section className="grid-bottom">
 
-            <div className="inst-list">
-              {institutes.map((inst) => {
-                const s = STATUS_STYLE[inst.paymentStatus] || STATUS_STYLE.pending;
-                return (
-                  <button
-                    key={inst._id}
-                    type="button"
-                    className="inst-row"
-                    onClick={() => router.push('/admin/institutes')}
-                    aria-label={(inst.instituteName || 'Institute') + ' — ' + s.label}
-                  >
-                    <span className="inst-avatar" aria-hidden="true">{(inst.instituteName || '?')[0].toUpperCase()}</span>
-                    <span className="inst-meta">
-                      <span className="inst-name">{inst.instituteName}</span>
-                      <span className="inst-owner">{inst.ownerName} · ₹{inst.planAmount?.toLocaleString('en-IN')}</span>
-                    </span>
-                    <span className="chip" style={chipStyle(s)}>{s.label}</span>
-                  </button>
-                );
-              })}
-              {institutes.length === 0 && (
-                <p className="empty">{dbOffline ? 'Database offline — cannot load institutes' : 'No institutes yet'}</p>
-              )}
+          <article className="sc-card sc-card-lg">
+            <div className="p-head">
+              <h2 className="sc-h3">Recent Institutes</h2>
+              <button className="sc-link" onClick={() => router.push('/admin/institutes')}>View all <span>&rarr;</span></button>
             </div>
+
+            {dbOffline ? (
+              <div className="sc-empty">
+                <span className="sc-empty-ico">
+                  <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                    <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+                  </svg>
+                </span>
+                Database offline &mdash; cannot load institutes
+              </div>
+            ) : institutes.length === 0 ? (
+              <div className="sc-empty">
+                <span className="sc-empty-ico">
+                  <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                    <path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-3"/>
+                  </svg>
+                </span>
+                No institutes yet
+              </div>
+            ) : (
+              <ul className="inst-list">
+                {institutes.map((inst, i) => {
+                  const s = STATUS_STYLE[inst.paymentStatus] || STATUS_STYLE.pending;
+                  return (
+                    <li key={inst.id || i} className="inst-row" style={delay(i * 0.05)}>
+                      <span className="inst-avatar" aria-hidden="true">
+                        {(inst.instituteName || '?').charAt(0).toUpperCase()}
+                      </span>
+                      <span className="inst-meta">
+                        <span className="inst-name">{inst.instituteName || '\u2014'}</span>
+                        <span className="inst-owner">{inst.ownerName || inst.username || '\u2014'}</span>
+                      </span>
+                      <span className="sc-badge" style={chipStyle(s)}>
+                        <i className="sc-badge-dot" />{s.label}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </article>
 
-          <article className="tile panel" style={tone('#c4b5fd', 1)}>
-            <span className="tile-edge" aria-hidden="true" />
-            <header className="t-head"><h3>Quick Actions</h3></header>
-            <div className="qa-col">
-              {quickActions.map((a, i) => (
-                <button key={a.label} className="qa" style={delay(i * 0.04)} onClick={a.action}>
-                  <span className="qa-ico" aria-hidden="true">
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={C.cyan} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{a.icon}</svg>
-                  </span>
-                  <span className="qa-label">{a.label}</span>
-                  <span className="qa-arrow" aria-hidden="true">→</span>
-                </button>
-              ))}
-            </div>
+          <article className="qa-col">
+            <p className="sc-eyebrow qa-title">Quick Actions</p>
+            {quickActions.map((a, i) => (
+              <button key={a.label} className="sc-action" style={delay(i * 0.05)} onClick={a.action}>
+                <span className="sc-ico" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{a.icon}</svg>
+                </span>
+                {a.label}
+                <svg className="sc-action-arrow" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+                </svg>
+              </button>
+            ))}
           </article>
+
         </section>
       </div>
 
       <style jsx>{`
-        /* ── Console shell ──────────────────────────────────────────────── */
-        .console { position:relative; overflow:hidden; border-radius:26px; padding:18px;
-          display:flex; flex-direction:column; gap:14px;
-          background: linear-gradient(160deg, ${C.navyDeep} 0%, ${C.navy} 48%, ${C.navyMid} 100%);
-          box-shadow: 0 26px 60px rgba(8,18,52,0.42), inset 0 1px 0 rgba(255,255,255,0.10);
-          animation: rise .55s ${EASE} both; }
-        @keyframes rise { from { opacity:0; transform: translateY(10px); } to { opacity:1; transform:none; } }
-        @keyframes pop { from { opacity:0; transform: translateY(12px); } to { opacity:1; transform:none; } }
+        .wrap { display: flex; flex-direction: column; gap: 22px; }
 
-        .aurora { position:absolute; border-radius:50%; pointer-events:none; }
-        .a1 { top:-120px; right:-80px; width:320px; height:320px;
-          background: radial-gradient(circle, rgba(92,225,230,0.22), transparent 70%); }
-        .a2 { bottom:-150px; left:-100px; width:300px; height:300px;
-          background: radial-gradient(circle, rgba(92,225,230,0.11), transparent 72%); }
-        .grid-lines { position:absolute; inset:0; pointer-events:none; opacity:.5;
-          background-image:
-            linear-gradient(to right, rgba(92,225,230,0.06) 1px, transparent 1px),
-            linear-gradient(to bottom, rgba(92,225,230,0.06) 1px, transparent 1px);
-          background-size: 46px 46px;
-          mask-image: radial-gradient(120% 90% at 50% 0%, #000 30%, transparent 75%);
-          -webkit-mask-image: radial-gradient(120% 90% at 50% 0%, #000 30%, transparent 75%); }
+        .name { margin-top: 5px; }
+        .date { font-size: ${T.fXs}; margin-top: 6px; }
 
-        .offline { position:relative; display:flex; align-items:center; gap:8px;
-          background:rgba(252,165,165,0.10); border:1px solid rgba(252,165,165,0.24);
-          color:#fecaca; font-size:.8rem; font-weight:600; padding:11px 13px; border-radius:14px; }
-
-        /* ── Head ───────────────────────────────────────────────────── */
-        .head { position:relative; display:flex; align-items:center; justify-content:space-between; gap:14px;
-          flex-wrap:wrap; padding-bottom:14px; border-bottom:1px solid ${C.hair}; }
-        .head-text { min-width:0; }
-        .greet { color:${C.faint}; font-size:.78rem; font-weight:500; margin:0; }
-        .name { color:${C.text}; font-size: clamp(1.35rem, 5.6vw, 2rem); font-weight:800; margin:4px 0 6px;
-          letter-spacing:-0.025em; line-height:1.08; text-shadow: 0 2px 18px rgba(92,225,230,0.14); }
-        .date { display:flex; align-items:center; gap:7px; color:${C.dim}; font-size:.76rem; margin:0; }
-        .live { width:6px; height:6px; border-radius:50%; background:${C.cyan}; flex-shrink:0;
-          box-shadow:0 0 0 3px rgba(92,225,230,0.18); animation: beat 2.4s ease-in-out infinite; }
-        @keyframes beat { 0%,100%{opacity:1} 50%{opacity:.35} }
-
-        .rev-badge { flex-shrink:0; padding:11px 14px; border-radius:16px;
-          background: linear-gradient(180deg, rgba(92,225,230,0.13), rgba(92,225,230,0.05));
-          border:1px solid rgba(92,225,230,0.20); }
-        .rb-l { color:${C.faint}; font-size:.62rem; text-transform:uppercase; letter-spacing:.1em; margin:0; }
-        .rb-v { color:${C.cyan}; font-size: clamp(1.25rem, 5.6vw, 1.6rem); font-weight:800; margin:4px 0 2px;
-          letter-spacing:-0.03em; font-variant-numeric: tabular-nums; }
-        .rb-s { color:${C.faint}; font-size:.68rem; margin:0; }
-
-        /* ── Bento tiles ──────────────────────────────────────────────── */
-        .bento { position:relative; display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
-        .tile { position:relative; overflow:hidden; border-radius:18px; padding:14px 13px;
-          background: linear-gradient(180deg, rgba(255,255,255,0.075), rgba(255,255,255,0.028));
-          border:1px solid ${C.hair};
-          backdrop-filter: blur(14px) saturate(150%); -webkit-backdrop-filter: blur(14px) saturate(150%);
-          box-shadow: inset 0 1px 0 rgba(255,255,255,0.10), 0 10px 26px rgba(6,14,40,0.24);
-          animation: pop .5s ${EASE} both; }
-        .tile-edge { position:absolute; top:0; left:14px; right:14px; height:1px;
-          background: linear-gradient(90deg, transparent, var(--tone), transparent); opacity:.75; }
-
-        .kpi { display:flex; flex-direction:column; align-items:flex-start; width:100%; text-align:left;
-          cursor:pointer; min-height:44px; -webkit-tap-highlight-color:transparent;
-          transition: transform .28s ${EASE}, border-color .28s ${EASE}, box-shadow .28s ${EASE}; }
-        .kpi-top { display:flex; align-items:center; gap:7px; min-width:0; width:100%; }
-        .kpi-ico { width:26px; height:26px; border-radius:9px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
-          background: rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.08); }
-        .kpi-lab { color:${C.dim}; font-size:.67rem; font-weight:600; letter-spacing:.02em;
-          white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .kpi-val { color:${C.text}; font-size: clamp(1.35rem, 6.2vw, 1.85rem); font-weight:800; letter-spacing:-0.03em;
-          line-height:1.05; margin-top:10px; font-variant-numeric: tabular-nums;
-          max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-
-        /* ── Revenue card ────────────────────────────────────────────── */
-        /* Kept as the one green surface, because it is the money number — but
-           dimmed and glassed so it belongs to the dark console. */
-        .rev-card { position:relative; border-radius:20px; padding:17px; color:#fff; overflow:visible;
-          background: linear-gradient(135deg, rgba(15,157,107,0.30), rgba(5,150,105,0.16));
-          border:1px solid rgba(52,211,153,0.26);
-          box-shadow: inset 0 1px 0 rgba(255,255,255,0.12), 0 14px 34px rgba(6,14,40,0.28);
-          animation: pop .5s ${EASE} both; }
-        .rev-glow { position:absolute; top:-50px; right:-30px; width:180px; height:180px; border-radius:50%; pointer-events:none;
-          background: radial-gradient(circle, rgba(52,211,153,0.22), transparent 70%); }
-        .rev-head { position:relative; display:flex; align-items:center; justify-content:space-between; gap:10px; }
-        .rev-title { font-size:.8rem; font-weight:600; color:${C.dim}; margin:0; }
-        .rev-value { position:relative; font-size: clamp(1.7rem, 8vw, 2.3rem); font-weight:800; margin:12px 0 3px;
-          letter-spacing:-0.03em; font-variant-numeric: tabular-nums; color:#fff; }
-        .rev-sub { position:relative; font-size:.72rem; color:${C.dim}; margin:0; }
-        .rev-dots { opacity:.7; }
-
-        /* ── Month picker ────────────────────────────────────────────── */
-        .picker { position:relative; flex-shrink:0; }
-        .picker-btn { background:rgba(255,255,255,0.10); border:1px solid rgba(255,255,255,0.18); color:#fff;
-          font-size:.74rem; font-weight:700; padding:8px 12px; border-radius:11px; cursor:pointer;
-          display:flex; align-items:center; gap:6px; min-height:38px; -webkit-tap-highlight-color:transparent;
-          transition: background .2s ease; }
-        .caret { font-size:.6rem; opacity:.85; }
-
-        .picker-scrim { display:none; }
-        .picker-pop { position:absolute; right:0; top:calc(100% + 8px); z-index:30; width:236px; padding:12px;
-          border-radius:16px; background: linear-gradient(180deg, #12275f, #0b1c50);
-          border:1px solid rgba(92,225,230,0.20);
-          box-shadow: 0 22px 50px rgba(4,10,32,0.55), inset 0 1px 0 rgba(255,255,255,0.10);
-          animation: pop .24s ${EASE} both; }
-        .picker-yr { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;
-          color:#fff; font-size:.82rem; font-weight:800; }
-        .yr-nav { background:rgba(255,255,255,0.08); border:1px solid ${C.hair}; color:${C.cyan};
-          width:30px; height:30px; border-radius:9px; cursor:pointer; font-size:1rem; line-height:1;
-          display:flex; align-items:center; justify-content:center; }
-        .picker-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
-        .month-cell { border:1px solid ${C.hair}; border-radius:10px; padding:9px 0; font-size:.74rem;
-          cursor:pointer; min-height:38px; transition: background .18s ease, transform .18s ${EASE}; }
-        .month-cell:active { transform: scale(0.95); }
-
-        /* ── Bottom panels ──────────────────────────────────────────── */
-        .bottom { position:relative; display:grid; grid-template-columns:1fr; gap:12px; }
-        .t-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; }
-        .t-head h3 { color:${C.text}; font-size:.88rem; font-weight:700; margin:0; }
-        .link { background:rgba(255,255,255,0.07); border:1px solid ${C.hair}; color:${C.cyan};
-          font-size:.72rem; font-weight:700; cursor:pointer; padding:6px 10px; border-radius:9px; flex-shrink:0;
-          -webkit-tap-highlight-color:transparent; transition: background .2s ease, transform .2s ${EASE}; }
-        .link:active { transform: scale(0.96); }
-
-        .inst-list { display:flex; flex-direction:column; gap:8px; }
-        .inst-row { display:flex; align-items:center; gap:11px; width:100%; text-align:left; cursor:pointer;
-          min-height:56px; padding:9px 10px; border-radius:14px;
-          background: rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06);
-          -webkit-tap-highlight-color:transparent;
-          transition: background .22s ease, transform .22s ${EASE}, border-color .22s ease; }
-        .inst-avatar { width:36px; height:36px; border-radius:11px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
-          font-size:.86rem; font-weight:800; color:${C.navyDeep};
-          background: linear-gradient(135deg, rgba(92,225,230,0.85), rgba(92,225,230,0.45)); }
-        .inst-meta { display:flex; flex-direction:column; min-width:0; flex:1; }
-        .inst-name { color:${C.text}; font-size:.84rem; font-weight:700;
-          white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .inst-owner { color:${C.faint}; font-size:.7rem; margin-top:2px;
-          white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .chip { flex-shrink:0; font-size:.64rem; font-weight:800; padding:5px 9px; border-radius:99px;
-          text-transform:uppercase; letter-spacing:.04em; }
-        .empty { color:${C.faint}; font-size:.78rem; text-align:center; padding:18px 0; margin:0; }
-
-        .qa-col { display:flex; flex-direction:column; gap:9px; }
-        .qa { display:flex; align-items:center; gap:10px; padding:12px 13px; border-radius:14px; cursor:pointer; text-align:left;
-          min-height:50px; width:100%; -webkit-tap-highlight-color:transparent;
-          background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.025));
-          border:1px solid ${C.hair}; color:${C.text}; font-size:.82rem; font-weight:600;
-          box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
-          animation: pop .5s ${EASE} both;
-          transition: transform .25s ${EASE}, border-color .25s ${EASE}, box-shadow .25s ${EASE}; }
-        .qa-ico { width:30px; height:30px; border-radius:10px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
-          background: rgba(92,225,230,0.12); border:1px solid rgba(92,225,230,0.18); }
-        .qa-label { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .qa-arrow { color:${C.faint}; flex-shrink:0; transition: transform .25s ${EASE}, color .25s ${EASE}; }
-
-        /* ── Interaction ──────────────────────────────────────────────── */
-        .kpi:active, .qa:active, .inst-row:active { transform: scale(0.975); }
-        @media (hover: hover) and (pointer: fine) {
-          .kpi:hover { transform: translateY(-4px); border-color: rgba(92,225,230,0.34);
-            box-shadow: inset 0 1px 0 rgba(255,255,255,0.14), 0 18px 38px rgba(6,14,40,0.4), 0 0 0 1px rgba(92,225,230,0.12); }
-          .qa:hover { transform: translateY(-3px); border-color: rgba(92,225,230,0.34);
-            box-shadow: inset 0 1px 0 rgba(255,255,255,0.14), 0 14px 30px rgba(6,14,40,0.36); }
-          .qa:hover .qa-arrow { transform: translateX(4px); color:${C.cyan}; }
-          .inst-row:hover { background: rgba(92,225,230,0.09); border-color: rgba(92,225,230,0.22); }
-          .link:hover, .picker-btn:hover { background: rgba(92,225,230,0.16); }
-          .month-cell:hover { background: rgba(92,225,230,0.12); }
-          .yr-nav:hover { background: rgba(92,225,230,0.16); }
+        /* Lifetime revenue reads as a credential in the masthead, which keeps
+           it out of the KPI rail where it would dominate five smaller numbers. */
+        .rev-badge {
+          display: flex; flex-direction: column; gap: 1px;
+          padding: 8px 14px;
+          background: ${T.successTint};
+          border: 1px solid rgba(34,197,94,0.22);
+          border-radius: ${T.rMd};
         }
-        .kpi:focus-visible, .qa:focus-visible, .link:focus-visible, .inst-row:focus-visible,
-        .picker-btn:focus-visible, .month-cell:focus-visible, .yr-nav:focus-visible {
-          outline:2px solid ${C.cyan}; outline-offset:2px; }
+        .rb-l { font-size: ${T.fMicro}; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #15803D; }
+        .rb-v { font-size: 1rem; font-weight: 800; color: #14532D; letter-spacing: -0.02em; }
 
-        /* ── Breakpoints ──────────────────────────────────────────────── */
-        /* Below 520px the popover becomes a centred sheet — a 236px box anchored
-           right could previously hang off the edge of a small screen. */
-        @media (max-width:519px){
-          .picker-scrim { display:block; position:fixed; inset:0; z-index:29;
-            background: rgba(4,10,32,0.55); backdrop-filter: blur(2px); }
-          .picker-pop { position:fixed; top:50%; left:50%; right:auto;
-            transform: translate(-50%,-50%); width: min(300px, calc(100vw - 40px)); }
-          .month-cell { min-height:44px; }
-        }
-        @media (min-width:760px){
-          .console { padding:26px; gap:18px; border-radius:30px; }
-          .head { padding-bottom:18px; }
-          .bento { grid-template-columns:repeat(3,1fr); gap:14px; }
-          .tile { padding:18px 17px; border-radius:20px; }
-          .kpi-lab { font-size:.72rem; }
-          .bottom { grid-template-columns:1.6fr 1fr; gap:14px; }
-          .rev-card { padding:22px; }
+        .grid-kpi { display: grid; gap: 14px; grid-template-columns: repeat(2, 1fr); }
+        .grid-kpi :global(.sc-stat) {
+          appearance: none;
+          font: inherit;
+          text-align: left;
+          animation: sc-rise ${T.dSlow} ${T.ease} both;
         }
 
-        @media (prefers-reduced-motion: reduce){
-          .console, .tile, .qa, .rev-card, .picker-pop { animation:none; }
-          .qa-arrow, .live { transition:none; animation:none; }
-          .kpi:active, .qa:active, .inst-row:active, .month-cell:active { transform:none; }
+        /* Revenue card ----------------------------------------------- */
+        .rev-card {
+          background: linear-gradient(135deg, #FFFFFF 0%, ${T.hover} 100%);
+          border-color: rgba(37,99,235,0.18);
+        }
+        .rev-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+        .rev-value {
+          margin: 7px 0 0;
+          font-size: clamp(1.8rem, 6vw, 2.4rem);
+          font-weight: 800; letter-spacing: -0.035em; line-height: 1;
+          color: ${T.navy};
+        }
+        .rev-load { opacity: 0.4; }
+        .rev-sub { margin: 7px 0 0; font-size: ${T.fXs}; color: ${T.muted}; font-weight: 600; }
+
+        /* Month picker ----------------------------------------------- */
+        .picker { position: relative; }
+        .caret { transition: transform ${T.dBase} ${T.ease}; }
+        .caret.up { transform: rotate(180deg); }
+
+        .picker-scrim { display: none; }
+
+        .picker-pop {
+          position: absolute; top: calc(100% + 8px); right: 0; z-index: 40;
+          width: 236px; padding: 12px;
+          background: ${T.card};
+          border: 1px solid ${T.border};
+          border-radius: ${T.rLg};
+          box-shadow: ${T.sh4};
+          animation: sc-rise 260ms ${T.ease} both;
+        }
+        .picker-yr {
+          display: flex; align-items: center; justify-content: space-between;
+          margin-bottom: 10px; font-size: ${T.fSm}; font-weight: 800; color: ${T.text};
+        }
+        .yr-nav {
+          width: 30px; height: 30px;
+          display: grid; place-items: center;
+          border: 1px solid ${T.border}; border-radius: 9px;
+          background: ${T.card}; color: ${T.text}; cursor: pointer;
+          transition: background ${T.dFast} ${T.ease};
+        }
+        .yr-nav:hover { background: ${T.hover}; }
+        .picker-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+        .month-cell {
+          min-height: 36px;
+          border: 0; border-radius: 9px;
+          font: inherit; font-size: ${T.fXs};
+          cursor: pointer;
+          transition: background ${T.dFast} ${T.ease};
+        }
+        .month-cell:hover { background: ${T.hover}; }
+
+        /* Bottom row ------------------------------------------------- */
+        .grid-bottom { display: grid; gap: 14px; grid-template-columns: 1fr; }
+        .p-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+
+        .inst-list { list-style: none; margin: 0; padding: 0; }
+        .inst-row {
+          display: flex; align-items: center; gap: 12px;
+          min-height: 56px; padding: 10px 0;
+          border-bottom: 1px solid #F1F5F9;
+          animation: sc-rise ${T.dSlow} ${T.ease} both;
+        }
+        .inst-row:last-child { border-bottom: 0; }
+        .inst-avatar {
+          width: 38px; height: 38px; flex: 0 0 38px;
+          display: grid; place-items: center;
+          border-radius: 11px;
+          background: linear-gradient(135deg, ${T.accent} 0%, ${T.accent2} 100%);
+          color: #fff; font-weight: 800; font-size: ${T.fSm};
+        }
+        .inst-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+        .inst-name {
+          font-size: ${T.fSm}; font-weight: 700; color: ${T.text};
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .inst-owner {
+          font-size: ${T.fXs}; color: ${T.muted};
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+
+        .qa-col { display: flex; flex-direction: column; gap: 10px; }
+        .qa-title { margin: 0 0 2px 2px; }
+        .qa-col :global(.sc-action) { animation: sc-rise ${T.dSlow} ${T.ease} both; }
+
+        /* Breakpoints ------------------------------------------------ */
+        @media (min-width: 900px) {
+          .wrap { gap: 26px; }
+          .grid-kpi { grid-template-columns: repeat(3, 1fr); gap: 16px; }
+          .grid-bottom { grid-template-columns: 1.6fr 1fr; gap: 16px; }
+        }
+        @media (min-width: 1140px) {
+          .grid-kpi { grid-template-columns: repeat(6, 1fr); }
+        }
+
+        /* On phones the popover would overflow the viewport, so it becomes a
+           centred sheet with a scrim instead. */
+        @media (max-width: 520px) {
+          .picker-scrim {
+            display: block;
+            position: fixed; inset: 0; z-index: 39;
+            background: rgba(11,31,77,0.38);
+            animation: sc-fade ${T.dBase} ${T.ease} both;
+          }
+          .picker-pop {
+            position: fixed;
+            top: 50%; left: 50%; right: auto;
+            transform: translate(-50%, -50%);
+            width: min(300px, calc(100vw - 40px));
+            animation: none;
+          }
         }
       `}</style>
     </AdminLayout>
