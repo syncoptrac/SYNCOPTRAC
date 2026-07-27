@@ -1,9 +1,10 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import InstituteLayout from '../../components/layout/InstituteLayout';
 import Modal from '../../components/ui/Modal';
 import api, { getUser } from '../../lib/api';
 import toast from 'react-hot-toast';
+import { T } from '../../components/ds/tokens';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -18,7 +19,7 @@ function fmtTime(val) {
   if (!val) return '';
   let hh, mm;
   if (typeof val === 'string' && val.includes('T')) {
-    // ISO datetime artifact — extract UTC time components
+    // ISO datetime artifact \u2014 extract UTC time components
     const d = new Date(val);
     if (!isNaN(d.getTime())) { hh = d.getUTCHours(); mm = d.getUTCMinutes(); }
   } else if (typeof val === 'string' && /^\d{1,2}:\d{2}$/.test(val.trim())) {
@@ -29,6 +30,14 @@ function fmtTime(val) {
   const h12 = hh % 12 || 12;
   return `${h12}:${String(mm).padStart(2, '0')} ${suffix}`;
 }
+
+const initials = (name) =>
+  String(name || '?')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w.charAt(0).toUpperCase())
+    .join('') || '?';
 
 export default function BatchesPage() {
   const [tab, setTab] = useState('batches'); // 'batches' | 'schedule'
@@ -46,6 +55,7 @@ export default function BatchesPage() {
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [assignBatch, setAssignBatch] = useState(null);
   const [selectedStudents, setSelectedStudents] = useState([]);
+  const [assignSearch, setAssignSearch] = useState('');
 
   // Schedule slot modal
   const [showSlotModal, setShowSlotModal] = useState(false);
@@ -98,7 +108,7 @@ export default function BatchesPage() {
     setLoading(false);
   };
 
-  // ── Batch CRUD ────────────────────────────────────────────
+  // ---- Batch CRUD ----
   const openNewBatch = () => {
     setEditBatchId(null);
     setBatchForm(EMPTY_BATCH);
@@ -143,7 +153,7 @@ export default function BatchesPage() {
     }
   };
 
-  // ── Assign students ───────────────────────────────────────
+  // ---- Assign students ----
   const openAssign = (b) => {
     setAssignBatch(b);
     // FIX: Google Sheets returns empty cells as 0 (number), not '' (string).
@@ -151,6 +161,7 @@ export default function BatchesPage() {
     // which was causing the client-side crash shown in the screenshot.
     const current = String(b.Students || '').split(',').map(s => s.trim()).filter(Boolean);
     setSelectedStudents(current);
+    setAssignSearch('');
     setShowAssignModal(true);
   };
 
@@ -176,7 +187,7 @@ export default function BatchesPage() {
     } finally { setSaving(false); }
   };
 
-  // ── Schedule CRUD ─────────────────────────────────────────
+  // ---- Schedule CRUD ----
   const openNewSlot = (batchId = '') => {
     setEditSlotId(null);
     setSlotForm({ ...EMPTY_SLOT, batchId: batchId || (batches[0]?.BatchID || '') });
@@ -226,7 +237,7 @@ export default function BatchesPage() {
     }
   };
 
-  // ── Helpers ───────────────────────────────────────────────
+  // ---- Helpers ----
   const getBatchColor = (batchId) => {
     const idx = batches.findIndex(b => String(b.BatchID) === String(batchId));
     return COLORS[idx % COLORS.length] || COLORS[0];
@@ -246,12 +257,64 @@ export default function BatchesPage() {
       .filter(s => s.Day === day)
       .sort((a, b) => a.StartTime.localeCompare(b.StartTime));
 
+  const assignFiltered = students.filter(s => {
+    if (!assignSearch) return true;
+    const q = assignSearch.toLowerCase();
+    return String(s.StudentName || '').toLowerCase().includes(q)
+      || String(s.Course || '').toLowerCase().includes(q)
+      || String(s.StudentID || '').toLowerCase().includes(q);
+  });
+
   if (loading) {
     return (
       <InstituteLayout title="Batches & Schedule">
-        <div style={{ textAlign: 'center', padding: '60px 0', color: '#9ca3af' }}>
-          Loading batches...
+        <div className="mast">
+          <div>
+            <p className="sc-eyebrow">Cohorts</p>
+            <h1 className="sc-h1">Batches &amp; Schedule</h1>
+            <p className="sub">Loading batches...</p>
+          </div>
         </div>
+        <div className="skgrid" role="status" aria-label="Loading batches...">
+          {[0, 1, 2, 3, 4, 5].map(i => (
+            <div className="skcard" key={i} style={{ animationDelay: `${i * 60}ms` }}>
+              <div className="sc-skel sk-rail" />
+              <div className="skbody">
+                <div className="sc-skel sk-l1" />
+                <div className="sc-skel sk-l2" />
+                <div className="sk-stats">
+                  <div className="sc-skel sk-tile" />
+                  <div className="sc-skel sk-tile" />
+                </div>
+                <div className="sc-skel sk-l3" />
+              </div>
+            </div>
+          ))}
+        </div>
+        <style jsx>{`
+          .mast { margin-bottom: 18px; }
+          .sub { margin: 5px 0 0; font-size: 0.875rem; color: ${T.muted}; }
+          .skgrid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+            gap: 14px;
+          }
+          .skcard {
+            background: ${T.card};
+            border: 1px solid ${T.border};
+            border-radius: 18px;
+            overflow: hidden;
+            animation: skIn 420ms ease both;
+          }
+          @keyframes skIn { from { opacity: 0; } to { opacity: 1; } }
+          .sk-rail { height: 5px; border-radius: 0; }
+          .skbody { padding: 18px; }
+          .sk-l1 { height: 13px; width: 55%; border-radius: 6px; }
+          .sk-l2 { height: 10px; width: 32%; border-radius: 6px; margin-top: 10px; }
+          .sk-stats { display: flex; gap: 11px; margin-top: 16px; }
+          .sk-tile { flex: 1; height: 52px; border-radius: 12px; }
+          .sk-l3 { height: 34px; border-radius: 10px; margin-top: 16px; }
+        `}</style>
       </InstituteLayout>
     );
   }
@@ -259,153 +322,129 @@ export default function BatchesPage() {
   return (
     <InstituteLayout title="Batches & Schedule">
 
-      {/* ── Tab bar ── */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 24, borderBottom: '1px solid #e5e7eb', paddingBottom: 0 }}>
+      {/* ---- Masthead ---- */}
+      <div className="mast">
+        <div>
+          <p className="sc-eyebrow">Cohorts</p>
+          <h1 className="sc-h1">Batches &amp; Schedule</h1>
+          <p className="sub">
+            {batches.length} batch{batches.length !== 1 ? 'es' : ''} &middot; {slots.length} class{slots.length !== 1 ? 'es' : ''} a week
+          </p>
+        </div>
+
+        <div className="mast-r">
+          {tab === 'batches' ? (
+            <button onClick={openNewBatch} className="sc-btn sc-btn-primary">
+              New Batch
+            </button>
+          ) : (
+            <button onClick={() => openNewSlot()} className="sc-btn sc-btn-primary"
+              disabled={batches.length === 0}>
+              Add Class
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ---- Tab bar ---- */}
+      <div className="sc-seg tabs" role="group" aria-label="Batches view">
         {[
-          { key: 'batches', label: '👥 Batches', count: batches.length },
-          { key: 'schedule', label: '📅 Weekly Timetable' },
+          { key: 'batches', label: '\uD83D\uDC65 Batches', count: batches.length },
+          { key: 'schedule', label: '\uD83D\uDCC5 Weekly Timetable' },
         ].map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            style={{
-              padding: '10px 18px',
-              fontSize: '0.875rem',
-              fontWeight: 600,
-              border: 'none',
-              background: 'transparent',
-              cursor: 'pointer',
-              borderBottom: tab === t.key ? '2px solid #1a73e8' : '2px solid transparent',
-              color: tab === t.key ? '#1a73e8' : '#6b7280',
-              transition: 'all 0.2s ease',
-              marginBottom: -1,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-            }}
+            className={tab === t.key ? 'tab is-on' : 'tab'}
+            aria-pressed={tab === t.key}
           >
             {t.label}
             {t.count !== undefined && (
-              <span style={{
-                background: tab === t.key ? '#1a73e8' : '#e5e7eb',
-                color: tab === t.key ? 'white' : '#6b7280',
-                fontSize: '11px', fontWeight: 700,
-                padding: '1px 7px', borderRadius: 10,
-              }}>{t.count}</span>
+              <span className={tab === t.key ? 'cnt cnt-on' : 'cnt'}>{t.count}</span>
             )}
           </button>
         ))}
       </div>
 
-      {/* ══════════════════════════════════════════════════════
-          TAB: BATCHES
-         ══════════════════════════════════════════════════════ */}
+      {/* ==================== TAB: BATCHES ==================== */}
       {tab === 'batches' && (
         <>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-            <button onClick={openNewBatch} className="btn-primary">
-              ➕ New Batch
-            </button>
-          </div>
-
           {batches.length === 0 ? (
-            <div style={{
-              background: 'white', borderRadius: 16, border: '1px solid #e5e7eb',
-              textAlign: 'center', padding: '60px 20px',
-            }}>
-              <div style={{ fontSize: '3rem', marginBottom: 12 }}>👥</div>
-              <p style={{ color: '#374151', fontWeight: 600, marginBottom: 6 }}>No batches yet</p>
-              <p style={{ color: '#9ca3af', fontSize: '0.875rem', marginBottom: 20 }}>
-                Create your first batch to group students
-              </p>
-              <button onClick={openNewBatch} className="btn-primary text-sm">Create First Batch</button>
+            <div className="sc-card sc-empty">
+              <div className="sc-empty-ico">
+                <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden="true">
+                  <circle cx="8" cy="8" r="3" stroke="currentColor" strokeWidth="1.6" />
+                  <circle cx="15" cy="9" r="2.3" stroke="currentColor" strokeWidth="1.6" />
+                  <path d="M2.5 18c0-3 2.6-4.6 5.5-4.6s5.5 1.6 5.5 4.6" stroke="currentColor"
+                    strokeWidth="1.6" strokeLinecap="round" />
+                </svg>
+              </div>
+              <p className="empty-t">No batches yet</p>
+              <p className="empty-s">Create your first batch to group students</p>
+              <button onClick={openNewBatch} className="sc-btn sc-btn-primary sc-btn-sm">Create First Batch</button>
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
+            <div className="bgrid">
               {batches.map((b, i) => {
                 const color = COLORS[i % COLORS.length];
                 const batchStudents = getStudentsOfBatch(b);
                 const batchSlots = slots.filter(s => String(s.BatchID) === String(b.BatchID));
 
                 return (
-                  <div key={b.BatchID} className="stagger-row" style={{
-                    '--i': i,
-                    background: 'white', borderRadius: 16,
-                    border: '1px solid #e5e7eb',
-                    boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
-                    overflow: 'hidden',
-                    transition: 'box-shadow 0.2s ease',
-                  }}
-                    onMouseEnter={e => e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.1)'}
-                    onMouseLeave={e => e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.05)'}
-                  >
-                    {/* Color bar */}
-                    <div style={{ height: 5, background: color }} />
+                  <div key={b.BatchID} className="bcard" style={{ animationDelay: `${Math.min(i, 10) * 55}ms` }}>
+                    {/* Colour rail */}
+                    <div className="rail" style={{ background: color }} />
 
-                    <div style={{ padding: 20 }}>
+                    <div className="bbody">
                       {/* Header */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-                        <div>
-                          <h3 style={{ fontWeight: 700, color: '#111827', fontSize: '1rem', marginBottom: 4 }}>
-                            {b.BatchName}
-                          </h3>
-                          <span style={{
-                            fontSize: '12px', padding: '2px 10px', borderRadius: 20,
-                            background: `${color}15`, color: color, fontWeight: 600,
-                          }}>
+                      <div className="bhead">
+                        <div className="bhead-l">
+                          <h3 className="bname">{b.BatchName}</h3>
+                          <span className="bcourse"
+                            style={{ background: `${color}15`, color: color }}>
                             {b.Course}
                           </span>
                         </div>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <button onClick={() => openEditBatch(b)}
-                            style={{ fontSize: '12px', color: '#6b7280', background: '#f3f4f6', border: 'none', borderRadius: 8, padding: '4px 10px', cursor: 'pointer' }}>
-                            Edit
-                          </button>
-                          <button onClick={() => deleteBatch(b.BatchID, b.BatchName)}
-                            style={{ fontSize: '12px', color: '#ef4444', background: '#fef2f2', border: 'none', borderRadius: 8, padding: '4px 10px', cursor: 'pointer' }}>
+                        <div className="bacts">
+                          <button onClick={() => openEditBatch(b)} className="act">Edit</button>
+                          <button onClick={() => deleteBatch(b.BatchID, b.BatchName)} className="act act-danger">
                             Delete
                           </button>
                         </div>
                       </div>
 
                       {b.Teacher && (
-                        <div style={{ fontSize: '13px', color: '#6b7280', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-                          👨‍🏫 <span>{b.Teacher}</span>
+                        <div className="teacher">
+                          <span className="tav" style={{ background: `${color}18`, color }}>
+                            {initials(b.Teacher)}
+                          </span>
+                          <span>{b.Teacher}</span>
                         </div>
                       )}
 
                       {/* Stats row */}
-                      <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-                        <div style={{ flex: 1, background: '#f4f6ff', borderRadius: 10, padding: '10px 12px', textAlign: 'center' }}>
-                          <div style={{ fontSize: '1.25rem', fontWeight: 700, color: color }}>{batchStudents.length}</div>
-                          <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: 2 }}>Students</div>
+                      <div className="bstats">
+                        <div className="btile">
+                          <div className="btile-v" style={{ color }}>{batchStudents.length}</div>
+                          <div className="btile-k">Students</div>
                         </div>
-                        <div style={{ flex: 1, background: '#f4f6ff', borderRadius: 10, padding: '10px 12px', textAlign: 'center' }}>
-                          <div style={{ fontSize: '1.25rem', fontWeight: 700, color: color }}>{batchSlots.length}</div>
-                          <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: 2 }}>Classes/week</div>
+                        <div className="btile">
+                          <div className="btile-v" style={{ color }}>{batchSlots.length}</div>
+                          <div className="btile-k">Classes/week</div>
                         </div>
                       </div>
 
                       {/* Student chips */}
                       {batchStudents.length > 0 && (
-                        <div style={{ marginBottom: 14 }}>
-                          <div style={{ fontSize: '11px', fontWeight: 600, color: '#9ca3af', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                            Students
-                          </div>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                        <div className="sect">
+                          <div className="sect-h">Students</div>
+                          <div className="chips">
                             {batchStudents.slice(0, 5).map(s => (
-                              <span key={s.StudentID} style={{
-                                fontSize: '11px', padding: '2px 8px', borderRadius: 20,
-                                background: '#f3f4f6', color: '#374151', fontWeight: 500,
-                              }}>
-                                {s.StudentName}
-                              </span>
+                              <span key={s.StudentID} className="chip">{s.StudentName}</span>
                             ))}
                             {batchStudents.length > 5 && (
-                              <span style={{
-                                fontSize: '11px', padding: '2px 8px', borderRadius: 20,
-                                background: `${color}15`, color: color, fontWeight: 600,
-                              }}>
+                              <span className="chip chip-more"
+                                style={{ background: `${color}15`, color: color }}>
                                 +{batchStudents.length - 5} more
                               </span>
                             )}
@@ -415,58 +454,33 @@ export default function BatchesPage() {
 
                       {/* Schedule preview */}
                       {batchSlots.length > 0 && (
-                        <div style={{ marginBottom: 14 }}>
-                          <div style={{ fontSize: '11px', fontWeight: 600, color: '#9ca3af', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                            Schedule
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <div className="sect">
+                          <div className="sect-h">Schedule</div>
+                          <div className="prev">
                             {batchSlots.slice(0, 3).map(slot => (
-                              <div key={slot.SlotID} style={{
-                                display: 'flex', alignItems: 'center', gap: 8,
-                                fontSize: '12px', color: '#374151',
-                              }}>
-                                <span style={{
-                                  width: 32, fontSize: '11px', fontWeight: 600,
-                                  color: color,
-                                }}>
+                              <div key={slot.SlotID} className="prow">
+                                <span className="pday" style={{ color }}>
                                   {DAY_SHORT[DAYS.indexOf(slot.Day)] || slot.Day.slice(0, 3)}
                                 </span>
-                                <span>{fmtTime(slot.StartTime)} – {fmtTime(slot.EndTime)}</span>
-                                {slot.Subject && <span style={{ color: '#9ca3af' }}>· {slot.Subject}</span>}
+                                <span className="ptime">{fmtTime(slot.StartTime)} &ndash; {fmtTime(slot.EndTime)}</span>
+                                {slot.Subject && <span className="psub">&middot; {slot.Subject}</span>}
                               </div>
                             ))}
                             {batchSlots.length > 3 && (
-                              <div style={{ fontSize: '11px', color: '#9ca3af' }}>+{batchSlots.length - 3} more classes</div>
+                              <div className="pmore">+{batchSlots.length - 3} more classes</div>
                             )}
                           </div>
                         </div>
                       )}
 
                       {/* Actions */}
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <button onClick={() => openAssign(b)}
-                          style={{
-                            flex: 1, fontSize: '12px', fontWeight: 600,
-                            padding: '8px', borderRadius: 10, border: `1px solid ${color}30`,
-                            background: `${color}10`, color: color, cursor: 'pointer',
-                            transition: 'all 0.2s',
-                          }}
-                          onMouseEnter={e => e.currentTarget.style.background = `${color}20`}
-                          onMouseLeave={e => e.currentTarget.style.background = `${color}10`}
-                        >
-                          👥 Assign Students
+                      <div className="bfoot">
+                        <button onClick={() => openAssign(b)} className="bbtn bbtn-tint"
+                          style={{ border: `1px solid ${color}30`, background: `${color}10`, color }}>
+                          Assign Students
                         </button>
-                        <button onClick={() => openNewSlot(b.BatchID)}
-                          style={{
-                            flex: 1, fontSize: '12px', fontWeight: 600,
-                            padding: '8px', borderRadius: 10, border: '1px solid #e5e7eb',
-                            background: '#f9fafb', color: '#374151', cursor: 'pointer',
-                            transition: 'all 0.2s',
-                          }}
-                          onMouseEnter={e => e.currentTarget.style.background = '#f3f4f6'}
-                          onMouseLeave={e => e.currentTarget.style.background = '#f9fafb'}
-                        >
-                          📅 Add Class
+                        <button onClick={() => openNewSlot(b.BatchID)} className="bbtn bbtn-plain">
+                          Add Class
                         </button>
                       </div>
                     </div>
@@ -478,124 +492,76 @@ export default function BatchesPage() {
         </>
       )}
 
-      {/* ══════════════════════════════════════════════════════
-          TAB: WEEKLY TIMETABLE
-         ══════════════════════════════════════════════════════ */}
+      {/* ==================== TAB: WEEKLY TIMETABLE ==================== */}
       {tab === 'schedule' && (
         <>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-            <div>
-              <p style={{ fontSize: '13px', color: '#6b7280' }}>
-                {slots.length} classes across {batches.length} batches
-              </p>
-            </div>
-            <button onClick={() => openNewSlot()} className="btn-primary text-sm" disabled={batches.length === 0}>
-              ➕ Add Class
-            </button>
-          </div>
+          <p className="across">
+            {slots.length} classes across {batches.length} batches
+          </p>
 
           {batches.length === 0 ? (
-            <div style={{ background: 'white', borderRadius: 16, border: '1px solid #e5e7eb', textAlign: 'center', padding: 40 }}>
-              <p style={{ color: '#9ca3af' }}>Create batches first before adding a schedule.</p>
+            <div className="sc-card sc-empty">
+              <p className="empty-t">Create batches first before adding a schedule.</p>
             </div>
           ) : (
             <>
-              {/* Batch color legend */}
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+              {/* Batch colour legend */}
+              <div className="legend">
                 {batches.map((b, i) => (
-                  <div key={b.BatchID} style={{
-                    display: 'flex', alignItems: 'center', gap: 6,
-                    padding: '4px 12px', borderRadius: 20,
-                    background: `${COLORS[i % COLORS.length]}12`,
-                    border: `1px solid ${COLORS[i % COLORS.length]}30`,
-                  }}>
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: COLORS[i % COLORS.length] }} />
-                    <span style={{ fontSize: '12px', fontWeight: 600, color: COLORS[i % COLORS.length] }}>
-                      {b.BatchName}
-                    </span>
+                  <div key={b.BatchID} className="lg"
+                    style={{
+                      background: `${COLORS[i % COLORS.length]}12`,
+                      border: `1px solid ${COLORS[i % COLORS.length]}30`,
+                    }}>
+                    <span className="lgdot" style={{ background: COLORS[i % COLORS.length] }} />
+                    <span className="lgn" style={{ color: COLORS[i % COLORS.length] }}>{b.BatchName}</span>
                   </div>
                 ))}
               </div>
 
-              {/* Weekly grid — horizontally scrollable on narrow screens */}
-              <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', marginBottom: 4, borderRadius: 10, paddingBottom: 4 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(130px, 1fr))', gap: 10, minWidth: 700 }}>
+              {/* Weekly grid \u2014 7 columns on desktop, stacked days on mobile */}
+              <div className="week">
                 {DAYS.map(day => {
                   const daySlots = getSlotsForDay(day);
                   return (
-                    <div key={day}>
-                      {/* Day header */}
-                      <div style={{
-                        background: 'linear-gradient(135deg, #11245d, #1a3a7a)',
-                        color: 'white',
-                        borderRadius: '10px 10px 0 0',
-                        padding: '10px 8px',
-                        textAlign: 'center',
-                        fontSize: '12px',
-                        fontWeight: 700,
-                        letterSpacing: '0.03em',
-                      }}>
-                        <div>{DAY_SHORT[DAYS.indexOf(day)]}</div>
-                        <div style={{ fontSize: '9px', fontWeight: 500, opacity: 0.7, marginTop: 2 }}>{day}</div>
+                    <div className="col" key={day}>
+                      <div className="dayh">
+                        <div className="dayh-s">{DAY_SHORT[DAYS.indexOf(day)]}</div>
+                        <div className="dayh-l">{day}</div>
+                        {daySlots.length > 0 && (
+                          <span className="dayh-n">{daySlots.length}</span>
+                        )}
                       </div>
 
-                      {/* Slots */}
-                      <div style={{
-                        background: 'white',
-                        borderRadius: '0 0 10px 10px',
-                        border: '1px solid #e5e7eb',
-                        borderTop: 'none',
-                        minHeight: 120,
-                        padding: '6px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 5,
-                      }}>
+                      <div className="cell">
                         {daySlots.length === 0 ? (
-                          <div style={{
-                            flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            color: '#d1d5db', fontSize: '11px', textAlign: 'center',
-                            padding: '12px 4px',
-                          }}>
-                            No class
-                          </div>
+                          <div className="noclass">No class</div>
                         ) : (
                           daySlots.map(slot => {
                             const color = getBatchColor(slot.BatchID);
                             return (
                               <div
                                 key={slot.SlotID}
+                                className="slot"
                                 style={{
                                   background: `${color}12`,
                                   border: `1px solid ${color}30`,
                                   borderLeft: `3px solid ${color}`,
-                                  borderRadius: 7,
-                                  padding: '6px 7px',
-                                  cursor: 'pointer',
-                                  transition: 'all 0.2s',
                                 }}
-                                onMouseEnter={e => e.currentTarget.style.background = `${color}22`}
-                                onMouseLeave={e => e.currentTarget.style.background = `${color}12`}
                                 onClick={() => openEditSlot(slot)}
+                                role="button"
+                                tabIndex={0}
+                                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openEditSlot(slot); } }}
+                                aria-label={`Edit class ${getBatchName(slot.BatchID)} on ${day}`}
                               >
-                                <div style={{ fontSize: '10px', fontWeight: 700, color }}>
-                                  {fmtTime(slot.StartTime)} – {fmtTime(slot.EndTime)}
+                                <div className="stime" style={{ color }}>
+                                  {fmtTime(slot.StartTime)} &ndash; {fmtTime(slot.EndTime)}
                                 </div>
-                                <div style={{ fontSize: '11px', fontWeight: 600, color: '#111827', marginTop: 2, lineHeight: 1.2 }}>
-                                  {getBatchName(slot.BatchID)}
-                                </div>
-                                {slot.Subject && (
-                                  <div style={{ fontSize: '10px', color: '#6b7280', marginTop: 1 }}>
-                                    {slot.Subject}
-                                  </div>
-                                )}
+                                <div className="sname">{getBatchName(slot.BatchID)}</div>
+                                {slot.Subject && <div className="ssub">{slot.Subject}</div>}
                                 <button
                                   onClick={e => { e.stopPropagation(); deleteSlot(slot.SlotID); }}
-                                  style={{
-                                    marginTop: 4, fontSize: '10px', color: '#ef4444',
-                                    background: 'transparent', border: 'none', cursor: 'pointer',
-                                    padding: 0,
-                                  }}
+                                  className="srem"
                                 >
                                   Remove
                                 </button>
@@ -608,83 +574,102 @@ export default function BatchesPage() {
                   );
                 })}
               </div>
-              </div>{/* end scroll wrapper */}
 
               {/* All Classes: toggle list view */}
-              <div style={{ marginTop: 24 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                  <h3 style={{ fontWeight: 700, color: '#111827', fontSize: '0.9rem', margin: 0 }}>
-                    📋 All Classes
-                  </h3>
-                  <button
-                    onClick={() => setShowListView(v => !v)}
-                    style={{
-                      fontSize: '12px', fontWeight: 600,
-                      padding: '6px 14px', borderRadius: 20,
-                      border: '1px solid rgba(17,36,93,0.2)',
-                      background: showListView ? 'linear-gradient(135deg,#11245d,#1a3a7a)' : 'white',
-                      color: showListView ? 'white' : '#11245d',
-                      cursor: 'pointer',
-                      transition: 'all 0.25s ease',
-                    }}
-                  >
+              <div className="all">
+                <div className="all-h">
+                  <h3 className="all-t">All Classes</h3>
+                  <button onClick={() => setShowListView(v => !v)}
+                    className={showListView ? 'toggle is-on' : 'toggle'}
+                    aria-expanded={showListView}>
                     {showListView ? 'Hide List' : 'View All Classes'}
                   </button>
                 </div>
+
                 {showListView && (
-                <div style={{
-                  background: 'white', borderRadius: 14, border: '1px solid #e5e7eb',
-                  overflow: 'hidden',
-                }}>
-                  {slots.length === 0 ? (
-                    <div style={{ padding: 32, textAlign: 'center', color: '#9ca3af', fontSize: '0.875rem' }}>
-                      No classes scheduled yet. Add a class from a batch card or the button above.
-                    </div>
-                  ) : (
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                      <thead>
-                        <tr style={{ background: '#f4f6ff', borderBottom: '1px solid #e5e7eb' }}>
-                          {['Batch', 'Day', 'Time', 'Subject', ''].map(h => (
-                            <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: '#6b7280', fontSize: '12px' }}>{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {DAYS.flatMap(day =>
-                          slots
-                            .filter(s => s.Day === day)
-                            .sort((a, b) => a.StartTime.localeCompare(b.StartTime))
-                            .map(slot => {
-                              const color = getBatchColor(slot.BatchID);
-                              return (
-                                <tr key={slot.SlotID} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                                  <td style={{ padding: '10px 14px' }}>
-                                    <span style={{
-                                      display: 'inline-flex', alignItems: 'center', gap: 6,
-                                      padding: '3px 10px', borderRadius: 20,
-                                      background: `${color}12`, color, fontSize: '12px', fontWeight: 600,
-                                    }}>
-                                      <div style={{ width: 6, height: 6, borderRadius: '50%', background: color }} />
-                                      {getBatchName(slot.BatchID)}
-                                    </span>
-                                  </td>
-                                  <td style={{ padding: '10px 14px', color: '#374151', fontWeight: 500 }}>{slot.Day}</td>
-                                  <td style={{ padding: '10px 14px', color: '#374151' }}>{fmtTime(slot.StartTime)} – {fmtTime(slot.EndTime)}</td>
-                                  <td style={{ padding: '10px 14px', color: '#6b7280' }}>{slot.Subject || '—'}</td>
-                                  <td style={{ padding: '10px 14px' }}>
-                                    <div style={{ display: 'flex', gap: 8 }}>
-                                      <button onClick={() => openEditSlot(slot)} style={{ fontSize: '11px', color: '#1a73e8', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Edit</button>
-                                      <button onClick={() => deleteSlot(slot.SlotID)} style={{ fontSize: '11px', color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Remove</button>
+                  <div className="sc-card sc-i listcard">
+                    {slots.length === 0 ? (
+                      <div className="nolist">
+                        No classes scheduled yet. Add a class from a batch card or the button above.
+                      </div>
+                    ) : (
+                      <>
+                        <div className="sc-table-scroll listtable">
+                          <table className="sc-table">
+                            <thead>
+                              <tr>
+                                {['Batch', 'Day', 'Time', 'Subject', ''].map(h => (
+                                  <th key={h} className={h === '' ? 'th-act' : undefined}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {DAYS.flatMap(day =>
+                                slots
+                                  .filter(s => s.Day === day)
+                                  .sort((a, b) => a.StartTime.localeCompare(b.StartTime))
+                                  .map(slot => {
+                                    const color = getBatchColor(slot.BatchID);
+                                    return (
+                                      <tr key={slot.SlotID} className="row">
+                                        <td>
+                                          <span className="bpill"
+                                            style={{ background: `${color}12`, color }}>
+                                            <span className="bpdot" style={{ background: color }} />
+                                            {getBatchName(slot.BatchID)}
+                                          </span>
+                                        </td>
+                                        <td className="nm">{slot.Day}</td>
+                                        <td className="tm">{fmtTime(slot.StartTime)} &ndash; {fmtTime(slot.EndTime)}</td>
+                                        <td className="dim">{slot.Subject || '\u2014'}</td>
+                                        <td className="th-act">
+                                          <div className="acts">
+                                            <button onClick={() => openEditSlot(slot)} className="act">Edit</button>
+                                            <button onClick={() => deleteSlot(slot.SlotID)} className="act act-danger">Remove</button>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* Mobile list */}
+                        <div className="lcards">
+                          {DAYS.flatMap(day =>
+                            slots
+                              .filter(s => s.Day === day)
+                              .sort((a, b) => a.StartTime.localeCompare(b.StartTime))
+                              .map(slot => {
+                                const color = getBatchColor(slot.BatchID);
+                                return (
+                                  <div className="lcard" key={slot.SlotID}
+                                    style={{ borderLeft: `3px solid ${color}` }}>
+                                    <div className="lcard-top">
+                                      <span className="bpill" style={{ background: `${color}12`, color }}>
+                                        <span className="bpdot" style={{ background: color }} />
+                                        {getBatchName(slot.BatchID)}
+                                      </span>
+                                      <span className="lcard-day">{slot.Day}</span>
                                     </div>
-                                  </td>
-                                </tr>
-                              );
-                            })
-                        )}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
+                                    <p className="lcard-tm">{fmtTime(slot.StartTime)} &ndash; {fmtTime(slot.EndTime)}</p>
+                                    {slot.Subject && <p className="lcard-sub">{slot.Subject}</p>}
+                                    <div className="lcard-acts">
+                                      <button onClick={() => openEditSlot(slot)}
+                                        className="sc-btn sc-btn-secondary sc-btn-sm grow">Edit</button>
+                                      <button onClick={() => deleteSlot(slot.SlotID)}
+                                        className="sc-btn sc-btn-danger sc-btn-sm grow">Remove</button>
+                                    </div>
+                                  </div>
+                                );
+                              })
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
                 )}
               </div>
             </>
@@ -692,83 +677,89 @@ export default function BatchesPage() {
         </>
       )}
 
-      {/* ── Create/Edit Batch Modal ── */}
+      {/* ---- Create/Edit Batch Modal ---- */}
       <Modal open={showBatchModal} onClose={() => setShowBatchModal(false)}
         title={editBatchId ? 'Edit Batch' : 'Create New Batch'}>
-        <form onSubmit={saveBatch} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Batch Name *</label>
-            <input className="input-field" placeholder="e.g. JEE Morning Batch"
+        <form onSubmit={saveBatch} className="fm">
+          <div className="f">
+            <label className="fl">Batch Name *</label>
+            <input className="sc-field" placeholder="e.g. JEE Morning Batch"
               value={batchForm.batchName} onChange={e => setBatchForm(p => ({ ...p, batchName: e.target.value }))} required />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Course *</label>
-            <input className="input-field" placeholder="e.g. JEE Mains, NEET, Class 10"
+          <div className="f">
+            <label className="fl">Course *</label>
+            <input className="sc-field" placeholder="e.g. JEE Mains, NEET, Class 10"
               value={batchForm.course} onChange={e => setBatchForm(p => ({ ...p, course: e.target.value }))} required />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Teacher / Faculty</label>
-            <input className="input-field" placeholder="e.g. Mr. Sharma"
+          <div className="f">
+            <label className="fl">Teacher / Faculty</label>
+            <input className="sc-field" placeholder="e.g. Mr. Sharma"
               value={batchForm.teacher} onChange={e => setBatchForm(p => ({ ...p, teacher: e.target.value }))} />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-            <input className="input-field" placeholder="Optional notes about this batch"
+          <div className="f">
+            <label className="fl">Description</label>
+            <input className="sc-field" placeholder="Optional notes about this batch"
               value={batchForm.description} onChange={e => setBatchForm(p => ({ ...p, description: e.target.value }))} />
           </div>
-          <div style={{ display: 'flex', gap: 10, paddingTop: 4 }}>
-            <button type="button" className="btn-secondary flex-1" onClick={() => setShowBatchModal(false)}>Cancel</button>
-            <button type="submit" className="btn-primary flex-1" disabled={saving}>
+          <div className="facts">
+            <button type="button" className="sc-btn sc-btn-secondary grow" onClick={() => setShowBatchModal(false)}>Cancel</button>
+            <button type="submit" className="sc-btn sc-btn-primary grow" disabled={saving}>
               {saving ? 'Saving...' : editBatchId ? 'Update Batch' : 'Create Batch'}
             </button>
           </div>
         </form>
       </Modal>
 
-      {/* ── Assign Students Modal ── */}
+      {/* ---- Assign Students Modal ---- */}
       <Modal open={showAssignModal} onClose={() => setShowAssignModal(false)}
-        title={`Assign Students — ${assignBatch?.BatchName || ''}`} size="lg">
-        <div>
-          <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: 14 }}>
+        title={`Assign Students \u2014 ${assignBatch?.BatchName || ''}`} size="lg">
+        <div className="asg">
+          <p className="asg-note">
             Select students to add to this batch. Students can be in multiple batches.
           </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 320, overflowY: 'auto', marginBottom: 16 }}>
+
+          {students.length > 3 && (
+            <input
+              className="sc-field asg-search"
+              placeholder="Search students..."
+              aria-label="Search students to assign"
+              value={assignSearch}
+              onChange={e => setAssignSearch(e.target.value)}
+            />
+          )}
+
+          <div className="asg-list">
             {students.length === 0 ? (
-              <p style={{ color: '#9ca3af', textAlign: 'center', padding: 20 }}>No students found. Add students first.</p>
+              <p className="asg-none">No students found. Add students first.</p>
+            ) : assignFiltered.length === 0 ? (
+              <p className="asg-none">No students match your search</p>
             ) : (
-              students.map(s => {
+              assignFiltered.map(s => {
                 const checked = selectedStudents.includes(String(s.StudentID));
                 return (
-                  <label key={s.StudentID} style={{
-                    display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '10px 14px', borderRadius: 10, cursor: 'pointer',
-                    background: checked ? 'rgba(26,115,232,0.06)' : '#f4f6ff',
-                    border: checked ? '1px solid rgba(26,115,232,0.2)' : '1px solid #e5e7eb',
-                    transition: 'all 0.15s ease',
-                  }}>
+                  <label key={s.StudentID} className={checked ? 'srow is-on' : 'srow'}>
                     <input type="checkbox" checked={checked}
                       onChange={() => toggleStudent(s.StudentID)}
-                      style={{ width: 16, height: 16, accentColor: '#1a73e8', flexShrink: 0 }} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600, fontSize: '13px', color: '#111827' }}>{s.StudentName}</div>
-                      <div style={{ fontSize: '11px', color: '#9ca3af' }}>{s.Course} · ID: {s.StudentID}</div>
+                      className="scb" />
+                    <span className="sav">{initials(s.StudentName)}</span>
+                    <div className="smeta">
+                      <div className="sname2">{s.StudentName}</div>
+                      <div className="ssub2">{s.Course} &middot; ID: {s.StudentID}</div>
                     </div>
-                    {checked && <span style={{ fontSize: '11px', color: '#1a73e8', fontWeight: 600 }}>✓ Selected</span>}
+                    {checked && <span className="stag">Selected</span>}
                   </label>
                 );
               })
             )}
           </div>
-          <div style={{
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            paddingTop: 12, borderTop: '1px solid #e5e7eb',
-          }}>
-            <span style={{ fontSize: '13px', color: '#6b7280' }}>
+
+          <div className="asg-foot">
+            <span className="asg-count">
               {selectedStudents.length} student{selectedStudents.length !== 1 ? 's' : ''} selected
             </span>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn-secondary" onClick={() => setShowAssignModal(false)}>Cancel</button>
-              <button className="btn-primary" onClick={saveAssignment} disabled={saving}>
+            <div className="asg-acts">
+              <button className="sc-btn sc-btn-secondary" onClick={() => setShowAssignModal(false)}>Cancel</button>
+              <button className="sc-btn sc-btn-primary" onClick={saveAssignment} disabled={saving}>
                 {saving ? 'Saving...' : 'Save Assignment'}
               </button>
             </div>
@@ -776,13 +767,13 @@ export default function BatchesPage() {
         </div>
       </Modal>
 
-      {/* ── Add/Edit Schedule Slot Modal ── */}
+      {/* ---- Add/Edit Schedule Slot Modal ---- */}
       <Modal open={showSlotModal} onClose={() => setShowSlotModal(false)}
         title={editSlotId ? 'Edit Class' : 'Add Class to Schedule'}>
-        <form onSubmit={saveSlot} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Batch *</label>
-            <select className="input-field" value={slotForm.batchId}
+        <form onSubmit={saveSlot} className="fm">
+          <div className="f">
+            <label className="fl">Batch *</label>
+            <select className="sc-field" value={slotForm.batchId}
               onChange={e => setSlotForm(p => ({ ...p, batchId: e.target.value }))} required>
               <option value="">Select batch...</option>
               {batches.map(b => (
@@ -790,39 +781,537 @@ export default function BatchesPage() {
               ))}
             </select>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Day *</label>
-            <select className="input-field" value={slotForm.day}
+          <div className="f">
+            <label className="fl">Day *</label>
+            <select className="sc-field" value={slotForm.day}
               onChange={e => setSlotForm(p => ({ ...p, day: e.target.value }))}>
               {DAYS.map(d => <option key={d} value={d}>{d}</option>)}
             </select>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Start Time *</label>
-              <input type="time" className="input-field" value={slotForm.startTime}
+          <div className="fgrid">
+            <div className="f">
+              <label className="fl">Start Time *</label>
+              <input type="time" className="sc-field" value={slotForm.startTime}
                 onChange={e => setSlotForm(p => ({ ...p, startTime: e.target.value }))} required />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">End Time *</label>
-              <input type="time" className="input-field" value={slotForm.endTime}
+            <div className="f">
+              <label className="fl">End Time *</label>
+              <input type="time" className="sc-field" value={slotForm.endTime}
                 onChange={e => setSlotForm(p => ({ ...p, endTime: e.target.value }))} required />
             </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Subject / Topic</label>
-            <input className="input-field" placeholder="e.g. Physics, Mathematics"
+          <div className="f">
+            <label className="fl">Subject / Topic</label>
+            <input className="sc-field" placeholder="e.g. Physics, Mathematics"
               value={slotForm.subject} onChange={e => setSlotForm(p => ({ ...p, subject: e.target.value }))} />
           </div>
-          <div style={{ display: 'flex', gap: 10, paddingTop: 4 }}>
-            <button type="button" className="btn-secondary flex-1" onClick={() => setShowSlotModal(false)}>Cancel</button>
-            <button type="submit" className="btn-primary flex-1" disabled={saving}>
+          <div className="facts">
+            <button type="button" className="sc-btn sc-btn-secondary grow" onClick={() => setShowSlotModal(false)}>Cancel</button>
+            <button type="submit" className="sc-btn sc-btn-primary grow" disabled={saving}>
               {saving ? 'Saving...' : editSlotId ? 'Update Class' : 'Add to Schedule'}
             </button>
           </div>
         </form>
       </Modal>
 
+      <style jsx>{`
+        .mast {
+          display: flex;
+          align-items: flex-end;
+          justify-content: space-between;
+          gap: 16px;
+          flex-wrap: wrap;
+          margin-bottom: 16px;
+        }
+        .sub { margin: 5px 0 0; font-size: 0.875rem; color: ${T.muted}; }
+        .mast-r { display: flex; gap: 8px; }
+
+        /* ---- Tabs ---- */
+        .tabs { margin-bottom: 18px; }
+        .tab {
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+          min-height: 38px;
+          padding: 0 15px;
+          font-size: 0.875rem;
+          font-weight: 600;
+          color: ${T.muted};
+          background: transparent;
+          border: 0;
+          border-radius: 9px;
+          cursor: pointer;
+          white-space: nowrap;
+          transition: background 180ms ease, color 180ms ease;
+        }
+        .tab:hover { color: ${T.text}; }
+        .tab.is-on {
+          background: ${T.card};
+          color: ${T.accent};
+          box-shadow: 0 1px 3px rgba(11, 31, 77, 0.1);
+        }
+        .tab:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.28); }
+        .cnt {
+          padding: 1px 7px;
+          font-size: 0.6875rem;
+          font-weight: 700;
+          border-radius: 999px;
+          background: #e5e7eb;
+          color: ${T.muted};
+        }
+        .cnt-on { background: ${T.accent}; color: #ffffff; }
+
+        /* ---- Batch cards ---- */
+        .bgrid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+          gap: 14px;
+        }
+        .bcard {
+          background: ${T.card};
+          border: 1px solid ${T.border};
+          border-radius: 18px;
+          overflow: hidden;
+          box-shadow: 0 1px 2px rgba(11, 31, 77, 0.04);
+          animation: rise 460ms cubic-bezier(0.16, 1, 0.3, 1) both;
+          transition: box-shadow 220ms ease, transform 220ms ease, border-color 220ms ease;
+        }
+        @keyframes rise {
+          from { opacity: 0; transform: translateY(8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @media (hover: hover) and (pointer: fine) {
+          .bcard:hover {
+            transform: translateY(-3px);
+            border-color: #d9e2ef;
+            box-shadow: 0 14px 32px rgba(11, 31, 77, 0.1);
+          }
+        }
+        .rail { height: 5px; }
+        .bbody { padding: 17px 18px 18px; }
+        .bhead {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 10px;
+        }
+        .bhead-l { min-width: 0; }
+        .bname {
+          margin: 0 0 7px;
+          font-size: 1.0625rem;
+          font-weight: 700;
+          letter-spacing: -0.01em;
+          color: ${T.text};
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .bcourse {
+          display: inline-block;
+          padding: 3px 10px;
+          font-size: 0.75rem;
+          font-weight: 600;
+          border-radius: 999px;
+        }
+        .bacts { display: flex; gap: 6px; flex: none; }
+        .act {
+          min-height: 30px;
+          padding: 0 10px;
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: ${T.muted};
+          background: ${T.bg};
+          border: 1px solid transparent;
+          border-radius: 8px;
+          cursor: pointer;
+          transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+        }
+        .act:hover { background: ${T.hover}; color: ${T.accent}; border-color: rgba(37, 99, 235, 0.2); }
+        .act-danger { color: ${T.danger}; }
+        .act-danger:hover {
+          background: rgba(239, 68, 68, 0.07);
+          color: #b91c1c;
+          border-color: rgba(239, 68, 68, 0.28);
+        }
+
+        .teacher {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-top: 13px;
+          font-size: 0.8125rem;
+          color: #4b5563;
+        }
+        .tav {
+          width: 24px;
+          height: 24px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 8px;
+          font-size: 0.625rem;
+          font-weight: 700;
+        }
+
+        .bstats { display: flex; gap: 11px; margin-top: 15px; }
+        .btile {
+          flex: 1;
+          padding: 11px 12px;
+          text-align: center;
+          background: ${T.bg};
+          border: 1px solid #eef2f7;
+          border-radius: 12px;
+        }
+        .btile-v {
+          font-size: 1.25rem;
+          font-weight: 700;
+          letter-spacing: -0.02em;
+          font-variant-numeric: tabular-nums;
+        }
+        .btile-k {
+          margin-top: 3px;
+          font-size: 0.6875rem;
+          font-weight: 600;
+          color: #9ca3af;
+        }
+
+        .sect { margin-top: 15px; }
+        .sect-h {
+          font-size: 0.6875rem;
+          font-weight: 700;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: #9ca3af;
+          margin-bottom: 7px;
+        }
+        .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+        .chip {
+          padding: 3px 9px;
+          font-size: 0.6875rem;
+          font-weight: 500;
+          color: #374151;
+          background: ${T.bg};
+          border: 1px solid #eef2f7;
+          border-radius: 999px;
+        }
+        .chip-more { font-weight: 600; border-color: transparent; }
+
+        .prev { display: flex; flex-direction: column; gap: 5px; }
+        .prow {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 0.75rem;
+          color: #374151;
+          min-width: 0;
+        }
+        .pday { width: 2rem; flex: none; font-size: 0.6875rem; font-weight: 700; }
+        .ptime { font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .psub {
+          color: #9ca3af;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .pmore { font-size: 0.6875rem; color: #9ca3af; }
+
+        .bfoot { display: flex; gap: 8px; margin-top: 16px; }
+        .bbtn {
+          flex: 1;
+          min-height: 40px;
+          font-size: 0.75rem;
+          font-weight: 600;
+          border-radius: 10px;
+          cursor: pointer;
+          transition: filter 160ms ease, background 160ms ease, transform 160ms ease;
+        }
+        .bbtn:active { transform: scale(0.98); }
+        .bbtn-tint:hover { filter: brightness(0.97); }
+        .bbtn-plain {
+          background: ${T.bg};
+          border: 1px solid ${T.border};
+          color: #374151;
+        }
+        .bbtn-plain:hover { background: ${T.hover}; border-color: rgba(37, 99, 235, 0.2); color: ${T.accent}; }
+
+        /* ---- Empty ---- */
+        .empty-t { margin: 0; font-size: 0.9375rem; font-weight: 600; color: ${T.text}; }
+        .empty-s { margin: 7px 0 16px; font-size: 0.8125rem; color: ${T.muted}; }
+
+        /* ---- Timetable ---- */
+        .across { margin: 0 0 14px; font-size: 0.8125rem; color: ${T.muted}; }
+        .legend { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+        .lg { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px; }
+        .lgdot { width: 8px; height: 8px; border-radius: 50%; }
+        .lgn { font-size: 0.75rem; font-weight: 600; }
+
+        .week {
+          display: grid;
+          grid-template-columns: repeat(7, minmax(0, 1fr));
+          gap: 10px;
+        }
+        .col { min-width: 0; }
+        .dayh {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          flex-wrap: wrap;
+          padding: 10px 8px;
+          text-align: center;
+          color: #ffffff;
+          background: linear-gradient(135deg, ${T.navy}, #12306e);
+          border-radius: 12px 12px 0 0;
+        }
+        .dayh-s { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.03em; }
+        .dayh-l { display: none; }
+        .dayh-n {
+          padding: 0 6px;
+          font-size: 0.625rem;
+          font-weight: 700;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.2);
+        }
+        .cell {
+          min-height: 7.5rem;
+          padding: 6px;
+          display: flex;
+          flex-direction: column;
+          gap: 5px;
+          background: ${T.card};
+          border: 1px solid ${T.border};
+          border-top: none;
+          border-radius: 0 0 12px 12px;
+        }
+        .noclass {
+          flex: 1;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 12px 4px;
+          font-size: 0.6875rem;
+          color: #cbd5e1;
+          text-align: center;
+        }
+        .slot {
+          padding: 7px 8px;
+          border-radius: 9px;
+          cursor: pointer;
+          transition: filter 180ms ease, transform 180ms ease;
+        }
+        .slot:hover { filter: brightness(0.97); }
+        .slot:active { transform: scale(0.99); }
+        .slot:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.3); }
+        .stime { font-size: 0.625rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+        .sname {
+          margin-top: 2px;
+          font-size: 0.6875rem;
+          font-weight: 600;
+          line-height: 1.25;
+          color: ${T.text};
+        }
+        .ssub { margin-top: 1px; font-size: 0.625rem; color: ${T.muted}; }
+        .srem {
+          margin-top: 5px;
+          padding: 0;
+          font-size: 0.625rem;
+          font-weight: 600;
+          color: ${T.danger};
+          background: transparent;
+          border: none;
+          cursor: pointer;
+        }
+        .srem:hover { text-decoration: underline; }
+
+        /* ---- All classes ---- */
+        .all { margin-top: 26px; }
+        .all-h {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 12px;
+        }
+        .all-t { margin: 0; font-size: 1.0625rem; font-weight: 700; color: ${T.text}; }
+        .toggle {
+          min-height: 36px;
+          padding: 0 15px;
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: ${T.navy};
+          background: ${T.card};
+          border: 1px solid rgba(11, 31, 77, 0.16);
+          border-radius: 999px;
+          cursor: pointer;
+          transition: background 200ms ease, color 200ms ease, border-color 200ms ease;
+        }
+        .toggle:hover { background: ${T.hover}; border-color: rgba(37, 99, 235, 0.28); color: ${T.accent}; }
+        .toggle.is-on {
+          color: #ffffff;
+          background: linear-gradient(135deg, ${T.navy}, #12306e);
+          border-color: transparent;
+        }
+        .listcard { overflow: hidden; }
+        .nolist { padding: 32px; text-align: center; color: ${T.muted}; font-size: 0.875rem; }
+        .row { animation: rise 380ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+        .th-act { text-align: right; }
+        .nm { font-weight: 500; color: #374151; }
+        .tm { color: #374151; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .dim { color: ${T.muted}; }
+        .bpill {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 4px 10px;
+          font-size: 0.75rem;
+          font-weight: 600;
+          border-radius: 999px;
+        }
+        .bpdot { width: 6px; height: 6px; border-radius: 50%; }
+        .acts { display: flex; gap: 6px; justify-content: flex-end; }
+
+        .lcards { display: none; }
+        .lcard {
+          padding: 13px 14px;
+          background: ${T.card};
+          border: 1px solid ${T.border};
+          border-radius: 14px;
+        }
+        .lcard + .lcard { margin-top: 9px; }
+        .lcard-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .lcard-day { font-size: 0.8125rem; font-weight: 600; color: #374151; }
+        .lcard-tm {
+          margin: 9px 0 0;
+          font-size: 0.9375rem;
+          font-weight: 600;
+          color: ${T.text};
+          font-variant-numeric: tabular-nums;
+        }
+        .lcard-sub { margin: 3px 0 0; font-size: 0.8125rem; color: ${T.muted}; }
+        .lcard-acts { display: flex; gap: 8px; margin-top: 12px; }
+
+        /* ---- Assign modal ---- */
+        .asg { display: flex; flex-direction: column; gap: 13px; }
+        .asg-note { margin: 0; font-size: 0.8125rem; color: ${T.muted}; }
+        .asg-list {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          max-height: 20rem;
+          overflow-y: auto;
+          padding: 2px;
+        }
+        .asg-none { margin: 0; padding: 20px; text-align: center; color: ${T.muted}; }
+        .srow {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 10px 13px;
+          background: ${T.bg};
+          border: 1px solid ${T.border};
+          border-radius: 12px;
+          cursor: pointer;
+          transition: background 160ms ease, border-color 160ms ease;
+        }
+        .srow:hover { background: ${T.hover}; }
+        .srow.is-on {
+          background: rgba(37, 99, 235, 0.06);
+          border-color: rgba(37, 99, 235, 0.28);
+        }
+        .scb { width: 17px; height: 17px; flex-shrink: 0; accent-color: ${T.accent}; cursor: pointer; }
+        .sav {
+          width: 30px;
+          height: 30px;
+          flex: none;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 9px;
+          background: ${T.card};
+          border: 1px solid ${T.border};
+          font-size: 0.6875rem;
+          font-weight: 700;
+          color: #4b5563;
+        }
+        .smeta { flex: 1; min-width: 0; }
+        .sname2 {
+          font-size: 0.875rem;
+          font-weight: 600;
+          color: ${T.text};
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .ssub2 { margin-top: 2px; font-size: 0.6875rem; color: #9ca3af; }
+        .stag {
+          flex: none;
+          padding: 3px 9px;
+          font-size: 0.6875rem;
+          font-weight: 600;
+          color: ${T.accent};
+          background: ${T.hover};
+          border-radius: 999px;
+        }
+        .asg-foot {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding-top: 13px;
+          border-top: 1px solid ${T.border};
+        }
+        .asg-count { font-size: 0.8125rem; color: ${T.muted}; }
+        .asg-acts { display: flex; gap: 8px; }
+
+        /* ---- Forms ---- */
+        .fm { display: flex; flex-direction: column; gap: 14px; }
+        .f { display: flex; flex-direction: column; min-width: 0; }
+        .fgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .fl { margin-bottom: 6px; font-size: 0.8125rem; font-weight: 600; color: #374151; }
+        .facts { display: flex; gap: 10px; padding-top: 2px; }
+        .grow { flex: 1; }
+
+        /* ---- Responsive ---- */
+        @media (max-width: 1080px) {
+          .week { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        }
+        @media (max-width: 900px) {
+          .mast-r { width: 100%; }
+          .mast-r > :global(button) { width: 100%; }
+          .tabs { width: 100%; }
+          .tab { flex: 1; justify-content: center; }
+          .week { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+        @media (max-width: 720px) {
+          .listtable { display: none; }
+          .lcards { display: block; padding: 12px; }
+          .week { grid-template-columns: 1fr; gap: 8px; }
+          .dayh {
+            justify-content: flex-start;
+            border-radius: 12px 12px 0 0;
+            padding: 9px 14px;
+          }
+          .dayh-l { display: block; font-size: 0.6875rem; font-weight: 500; opacity: 0.72; }
+          .dayh-s { display: none; }
+          .dayh-n { margin-left: auto; }
+          .cell { min-height: 0; padding: 8px; }
+          .noclass { padding: 8px 4px; }
+          .slot { padding: 10px 11px; }
+          .stime { font-size: 0.75rem; }
+          .sname { font-size: 0.8125rem; }
+          .ssub { font-size: 0.6875rem; }
+          .srem { min-height: 28px; }
+          .all-h { flex-direction: column; align-items: stretch; }
+          .facts { flex-direction: column-reverse; }
+          .fgrid { grid-template-columns: 1fr; }
+          .asg-foot { flex-direction: column; align-items: stretch; }
+          .asg-acts > :global(button) { flex: 1; }
+        }
+        @media (max-width: 420px) {
+          .bgrid { grid-template-columns: 1fr; }
+          .bfoot { flex-direction: column; }
+        }
+      `}</style>
     </InstituteLayout>
   );
 }
