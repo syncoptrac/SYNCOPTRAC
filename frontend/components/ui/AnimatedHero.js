@@ -1,48 +1,69 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 
-function CinematicCanvas() {
+/* Deep dark blue brand system. Cyan appears only in the wordmark. */
+const C = {
+  header: '#071A52',
+  primary: '#0B1F4D',
+  secondary: '#12356D',
+  accent: '#2563EB',
+  accentHover: '#3B82F6',
+};
+
+/* ------------------------------------------------------------------
+   Constellation canvas - hexagon clusters, recoloured from turquoise
+   to the blue brand range. Same motion model, calmer and more
+   enterprise: slower drift, thinner strokes, depth via alpha.
+------------------------------------------------------------------ */
+function ConstellationCanvas() {
   const canvasRef = useRef(null);
   const rafRef = useRef(null);
-  const timeRef = useRef(0);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
+
+    const reduce =
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
     const isMobile = window.innerWidth < 768;
 
     let W = canvas.offsetWidth;
     let H = canvas.offsetHeight;
-    canvas.width = W * window.devicePixelRatio;
-    canvas.height = H * window.devicePixelRatio;
-    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    ctx.scale(dpr, dpr);
 
-    function makeCluster(anchorX, anchorY, baseSize, vx, vy) {
+    function makeCluster(anchorX, anchorY, baseSize, vx, vy, depth) {
       const offsets = [
-        { dx: 0,           dy: 0           },
+        { dx: 0, dy: 0 },
         { dx: -baseSize * 1.55, dy: -baseSize * 0.9 },
-        { dx:  baseSize * 1.55, dy: -baseSize * 0.9 },
-        { dx:  0,           dy:  baseSize * 1.75 },
+        { dx: baseSize * 1.55, dy: -baseSize * 0.9 },
+        { dx: 0, dy: baseSize * 1.75 },
       ];
       const sizes = [baseSize, baseSize * 0.85, baseSize * 0.75, baseSize * 0.7];
       return {
-        x: anchorX, y: anchorY, vx, vy,
+        x: anchorX, y: anchorY, vx, vy, depth,
         phase: Math.random() * Math.PI * 2,
         rotation: Math.random() * Math.PI * 2,
-        rotSpeed: (Math.random() - 0.5) * 0.0015,
+        rotSpeed: (Math.random() - 0.5) * 0.0011,
         offsets, sizes,
       };
     }
 
-    const clusters = isMobile ? [
-      makeCluster(W * 0.28, H * 0.2, 38, 0.08, 0.06),
-      makeCluster(W * 0.68, H * 0.65, 30, -0.07, -0.05),
-    ] : [
-      makeCluster(W * 0.22, H * 0.22, 52, 0.08, 0.07),
-      makeCluster(W * 0.72, H * 0.62, 42, -0.09, -0.06),
-      makeCluster(W * 0.78, H * 0.18, 28, -0.05, 0.08),
-    ];
+    const clusters = isMobile
+      ? [
+          makeCluster(W * 0.26, H * 0.2, 36, 0.05, 0.04, 1),
+          makeCluster(W * 0.7, H * 0.68, 28, -0.045, -0.032, 0.6),
+        ]
+      : [
+          makeCluster(W * 0.18, H * 0.24, 50, 0.05, 0.045, 1),
+          makeCluster(W * 0.74, H * 0.62, 40, -0.055, -0.038, 0.72),
+          makeCluster(W * 0.8, H * 0.18, 26, -0.032, 0.05, 0.5),
+        ];
 
     function drawHex(x, y, r, rotation) {
       ctx.beginPath();
@@ -55,22 +76,24 @@ function CinematicCanvas() {
       ctx.closePath();
     }
 
-    function draw() {
-      timeRef.current += 0.008;
+    function paint() {
       ctx.clearRect(0, 0, W, H);
 
       clusters.forEach(cl => {
-        cl.x += cl.vx;
-        cl.y += cl.vy;
-        cl.phase += 0.006;
-        cl.rotation += cl.rotSpeed;
+        if (!reduce) {
+          cl.x += cl.vx;
+          cl.y += cl.vy;
+          cl.phase += 0.005;
+          cl.rotation += cl.rotSpeed;
+        }
 
-        if (cl.x < -200) cl.x = W + 200;
-        if (cl.x > W + 200) cl.x = -200;
-        if (cl.y < -200) cl.y = H + 200;
-        if (cl.y > H + 200) cl.y = -200;
+        if (cl.x < -220) cl.x = W + 220;
+        if (cl.x > W + 220) cl.x = -220;
+        if (cl.y < -220) cl.y = H + 220;
+        if (cl.y > H + 220) cl.y = -220;
 
-        const pulse = Math.sin(cl.phase) * 0.05 + 0.95;
+        const pulse = Math.sin(cl.phase) * 0.04 + 0.96;
+        const d = cl.depth;
 
         const positions = cl.offsets.map((o, i) => ({
           x: cl.x + o.dx,
@@ -78,78 +101,76 @@ function CinematicCanvas() {
           r: cl.sizes[i] * pulse,
         }));
 
-        // Connection lines — white/light
+        // Spokes from the anchor node
         for (let i = 1; i < positions.length; i++) {
           ctx.beginPath();
           ctx.moveTo(positions[0].x, positions[0].y);
           ctx.lineTo(positions[i].x, positions[i].y);
-          ctx.strokeStyle = 'rgba(255,255,255,0.22)';
-          ctx.lineWidth = 0.8;
+          ctx.strokeStyle = 'rgba(191,219,254,' + (0.2 * d).toFixed(3) + ')';
+          ctx.lineWidth = 0.75;
           ctx.stroke();
         }
+        // Web between satellites
         for (let i = 1; i < positions.length; i++) {
           for (let j = i + 1; j < positions.length; j++) {
             ctx.beginPath();
             ctx.moveTo(positions[i].x, positions[i].y);
             ctx.lineTo(positions[j].x, positions[j].y);
-            ctx.strokeStyle = 'rgba(255,255,255,0.10)';
-            ctx.lineWidth = 0.6;
+            ctx.strokeStyle = 'rgba(147,197,253,' + (0.09 * d).toFixed(3) + ')';
+            ctx.lineWidth = 0.55;
             ctx.stroke();
           }
         }
 
-        // Draw hexagons — all turquoise
         positions.forEach((pos, i) => {
-          drawHex(pos.x, pos.y, pos.r, cl.rotation + i * 0.08);
-          ctx.strokeStyle = 'rgba(92,225,230,0.75)';
-          ctx.lineWidth = i === 0 ? 1.6 : 1.2;
+          drawHex(pos.x, pos.y, pos.r, cl.rotation + i * 0.07);
+          ctx.strokeStyle = i === 0
+            ? 'rgba(96,165,250,' + (0.62 * d).toFixed(3) + ')'
+            : 'rgba(147,197,253,' + (0.4 * d).toFixed(3) + ')';
+          ctx.lineWidth = i === 0 ? 1.4 : 1;
           ctx.stroke();
+
+          // Soft node at each vertex centre for a jewelled feel
+          ctx.beginPath();
+          ctx.arc(pos.x, pos.y, 1.6, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(219,234,254,' + (0.5 * d).toFixed(3) + ')';
+          ctx.fill();
         });
       });
 
-      rafRef.current = requestAnimationFrame(draw);
+      if (!reduce) rafRef.current = requestAnimationFrame(paint);
     }
 
-    draw();
+    paint();
 
     const handleResize = () => {
       W = canvas.offsetWidth;
       H = canvas.offsetHeight;
-      canvas.width = W * window.devicePixelRatio;
-      canvas.height = H * window.devicePixelRatio;
-      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+      canvas.width = W * dpr;
+      canvas.height = H * dpr;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(dpr, dpr);
+      if (reduce) paint();
     };
     window.addEventListener('resize', handleResize);
-    return () => { cancelAnimationFrame(rafRef.current); window.removeEventListener('resize', handleResize); };
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      window.removeEventListener('resize', handleResize);
+    };
   }, []);
 
-  return (
-    <canvas
-      ref={canvasRef}
-      className="absolute inset-0 pointer-events-none"
-      style={{ width: '100%', height: '100%', opacity: 0.85 }}
-    />
-  );
+  return <canvas ref={canvasRef} className="hero-canvas" aria-hidden="true" />;
 }
 
-function CinematicText({ children, delay = 0, className = '', as: Tag = 'div' }) {
+/* Staged entrance: blur + lift, honouring reduced motion. */
+function Reveal({ children, delay = 0, className = '', as: Tag = 'div' }) {
   const [visible, setVisible] = useState(false);
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), delay);
     return () => clearTimeout(t);
   }, [delay]);
   return (
-    <Tag
-      className={className}
-      style={{
-        opacity: visible ? 1 : 0,
-        transform: visible ? 'translateY(0) scale(1)' : 'translateY(28px) scale(0.98)',
-        filter: visible ? 'blur(0px)' : 'blur(6px)',
-        transition: `opacity 1s cubic-bezier(0.16,1,0.3,1) 0ms,
-                     transform 1s cubic-bezier(0.16,1,0.3,1) 0ms,
-                     filter 0.9s cubic-bezier(0.16,1,0.3,1) 0ms`,
-      }}
-    >
+    <Tag className={className + (visible ? ' is-in' : '') + ' reveal'}>
       {children}
     </Tag>
   );
@@ -157,203 +178,458 @@ function CinematicText({ children, delay = 0, className = '', as: Tag = 'div' })
 
 export default function AnimatedHero() {
   const [mounted, setMounted] = useState(false);
+  const sectionRef = useRef(null);
+  const rafRef = useRef(null);
+  const targetRef = useRef({ x: 50, y: 50 });
+
   useEffect(() => { setMounted(true); }, []);
 
+  // Pointer-reactive lighting. rAF-throttled, writes CSS vars only.
+  useEffect(() => {
+    const el = sectionRef.current;
+    if (!el) return;
+    if (
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) return;
+
+    const apply = () => {
+      rafRef.current = null;
+      el.style.setProperty('--hx', targetRef.current.x + '%');
+      el.style.setProperty('--hy', targetRef.current.y + '%');
+    };
+    const onMove = (e) => {
+      const rect = el.getBoundingClientRect();
+      targetRef.current = {
+        x: ((e.clientX - rect.left) / rect.width) * 100,
+        y: ((e.clientY - rect.top) / rect.height) * 100,
+      };
+      if (!rafRef.current) rafRef.current = requestAnimationFrame(apply);
+    };
+    el.addEventListener('mousemove', onMove);
+    return () => {
+      el.removeEventListener('mousemove', onMove);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
+
   return (
-    <section
-      className="relative overflow-hidden text-white"
-      style={{
-        background: 'linear-gradient(160deg, #0a1844 0%, #11245d 35%, #172d74 65%, #0d1e55 100%)',
-        minHeight: '94vh',
-        display: 'flex',
-        alignItems: 'center',
-      }}
-    >
-      {mounted && <CinematicCanvas />}
+    <section ref={sectionRef} className="hero">
+      {/* Depth stack -------------------------------------------------- */}
+      <div className="hero-grid" aria-hidden="true" />
+      {mounted && <ConstellationCanvas />}
+      <div className="hero-spot" aria-hidden="true" />
+      <div className="hero-orb hero-orb-1" aria-hidden="true" />
+      <div className="hero-orb hero-orb-2" aria-hidden="true" />
+      <div className="hero-orb hero-orb-3" aria-hidden="true" />
+      <div className="hero-beam" aria-hidden="true" />
+      <div className="hero-vignette" aria-hidden="true" />
 
-      {/* Atmospheric gradient layers */}
-      <div className="absolute inset-0 pointer-events-none" style={{
-        background: 'radial-gradient(ellipse 75% 55% at 50% 45%, rgba(92,225,230,0.07) 0%, transparent 65%)',
-      }} />
-      <div className="absolute inset-0 pointer-events-none" style={{
-        background: 'radial-gradient(ellipse 40% 40% at 20% 70%, rgba(212,175,55,0.04) 0%, transparent 60%)',
-      }} />
-      <div className="absolute inset-0 pointer-events-none" style={{
-        background: 'radial-gradient(ellipse 30% 30% at 80% 20%, rgba(92,225,230,0.05) 0%, transparent 60%)',
-      }} />
-
-      {/* Floating orbs */}
-      <div className="absolute pointer-events-none" style={{
-        width: 600, height: 600, borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(92,225,230,0.055) 0%, transparent 65%)',
-        top: '-15%', left: '-12%',
-        animation: 'cinOrb1 12s ease-in-out infinite',
-        willChange: 'transform',
-      }} />
-      <div className="absolute pointer-events-none" style={{
-        width: 450, height: 450, borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(212,175,55,0.045) 0%, transparent 65%)',
-        bottom: '-8%', right: '-8%',
-        animation: 'cinOrb2 15s ease-in-out infinite',
-        willChange: 'transform',
-      }} />
-      <div className="absolute pointer-events-none" style={{
-        width: 280, height: 280, borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(92,225,230,0.04) 0%, transparent 70%)',
-        top: '30%', right: '15%',
-        animation: 'cinOrb3 9s ease-in-out infinite',
-        willChange: 'transform',
-      }} />
-
-      {/* Vignette */}
-      <div className="absolute inset-0 pointer-events-none" style={{
-        background: 'radial-gradient(ellipse 100% 100% at 50% 50%, transparent 55%, rgba(10,24,68,0.7) 100%)',
-      }} />
-
-      {/* Content */}
-      <div className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 py-24 text-center w-full">
-
-        <CinematicText delay={280} className="mb-6">
-          <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold leading-[1.08] tracking-tight">
-            <span style={{ color: '#f0f6ff' }}>Run Your Educational</span>
+      {/* Content ------------------------------------------------------ */}
+      <div className="hero-inner">
+        <Reveal delay={280} className="hero-title-wrap">
+          <h1 className="hero-title">
+            <span className="hl-1">Run Your Educational</span>
             <br />
-            <span style={{ color: '#dde8ff' }}>or Training Institute</span>
+            <span className="hl-2">or Training Institute</span>
             <br />
-            <span
-              style={{
-                background: 'linear-gradient(92deg, #d4af37 0%, #f0c040 40%, #ffe07a 70%, #d4af37 100%)',
-                backgroundSize: '200% auto',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                backgroundClip: 'text',
-                animation: 'goldShimmer 4s linear infinite',
-                display: 'inline-block',
-              }}
-            >
-              with Clarity
-            </span>
+            <span className="hl-3">with Clarity</span>
           </h1>
-        </CinematicText>
+        </Reveal>
 
-        <CinematicText delay={460} className="mb-12">
-          <p
-            className="text-lg md:text-xl max-w-2xl mx-auto leading-relaxed"
-            style={{ color: 'rgba(200,215,255,0.9)', fontWeight: 600 }}
-          >
+        <Reveal delay={460} className="hero-copy-wrap">
+          <p className="hero-copy">
             Manage students, attendance, fees, and enquiries in one structured system —
             designed to reduce scattered records and manual tracking.
             <br />
-            <span style={{ color: 'rgba(200,215,255,0.75)', fontSize: '0.95em', fontWeight: 600 }}>
+            <span className="hero-copy-sub">
               A simple way to keep your daily operations organized and easier to manage.
             </span>
           </p>
-        </CinematicText>
+        </Reveal>
 
-        <CinematicText delay={620}>
-          <div className="flex flex-col items-center gap-4">
-            <Link
-              href="/get-started"
-              className="group relative inline-flex items-center justify-center gap-2.5 font-bold px-10 py-4 rounded-xl text-base overflow-hidden"
-              style={{
-                background: 'linear-gradient(135deg, #d4af37 0%, #f0c040 50%, #d4af37 100%)',
-                backgroundSize: '200% auto',
-                color: '#11245d',
-                boxShadow: '0 0 32px rgba(212,175,55,0.32), 0 4px 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.25)',
-                transition: 'all 0.35s cubic-bezier(0.16,1,0.3,1)',
-                letterSpacing: '0.01em',
-                animation: 'btnGlow 3s ease-in-out infinite',
-                textDecoration: 'none',
-                width: '260px',
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.boxShadow = '0 0 60px rgba(212,175,55,0.55), 0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.3)';
-                e.currentTarget.style.transform = 'translateY(-3px) scale(1.02)';
-                e.currentTarget.style.backgroundPosition = '100% center';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.boxShadow = '0 0 32px rgba(212,175,55,0.32), 0 4px 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.25)';
-                e.currentTarget.style.transform = 'translateY(0) scale(1)';
-                e.currentTarget.style.backgroundPosition = '0% center';
-              }}
-            >
-              Get Started
-              <span style={{ transition: 'transform 0.3s cubic-bezier(0.16,1,0.3,1)' }} className="group-hover:translate-x-1.5">→</span>
+        <Reveal delay={620}>
+          <div className="hero-cta">
+            <Link href="/get-started" className="hbtn hbtn-primary">
+              <span className="hbtn-sheen" aria-hidden="true" />
+              <span className="hbtn-face">
+                Get Started
+                <span className="hbtn-arrow">→</span>
+              </span>
             </Link>
 
-            <Link
-              href="/features"
-              className="group inline-flex items-center justify-center gap-2.5 font-bold px-10 py-4 rounded-xl text-base"
-              style={{
-                background: 'linear-gradient(135deg, #d4af37 0%, #f0c040 50%, #d4af37 100%)',
-                backgroundSize: '200% auto',
-                color: '#11245d',
-                boxShadow: '0 0 20px rgba(212,175,55,0.18), 0 4px 16px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.2)',
-                transition: 'all 0.35s cubic-bezier(0.16,1,0.3,1)',
-                letterSpacing: '0.01em',
-                textDecoration: 'none',
-                width: '260px',
-                opacity: 0.88,
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.boxShadow = '0 0 48px rgba(212,175,55,0.45), 0 8px 28px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.3)';
-                e.currentTarget.style.transform = 'translateY(-3px) scale(1.02)';
-                e.currentTarget.style.opacity = '1';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.boxShadow = '0 0 20px rgba(212,175,55,0.18), 0 4px 16px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.2)';
-                e.currentTarget.style.transform = 'translateY(0) scale(1)';
-                e.currentTarget.style.opacity = '0.88';
-              }}
-            >
-              See Features
-              <span style={{ transition: 'transform 0.3s cubic-bezier(0.16,1,0.3,1)' }} className="group-hover:translate-x-1.5">→</span>
+            <Link href="/features" className="hbtn hbtn-ghost">
+              <span className="hbtn-face">
+                See Features
+                <span className="hbtn-arrow">→</span>
+              </span>
             </Link>
           </div>
-        </CinematicText>
+        </Reveal>
 
-        <CinematicText delay={1100}>
-          <div className="mt-16 flex justify-center">
-            <div style={{
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
-              opacity: 0.35, animation: 'scrollBob 2.5s ease-in-out infinite',
-            }}>
-              <div style={{ width: 1, height: 32, background: 'linear-gradient(180deg, rgba(92,225,230,0.8), transparent)' }} />
-              <div style={{ width: 4, height: 4, borderRadius: '50%', background: '#5ce1e6' }} />
-            </div>
+        <Reveal delay={1100}>
+          <div className="hero-scroll" aria-hidden="true">
+            <span className="hero-scroll-line" />
+            <span className="hero-scroll-dot" />
           </div>
-        </CinematicText>
+        </Reveal>
       </div>
 
-      <style jsx global>{`
-        @keyframes cinOrb1 {
+      <style jsx>{`
+        .hero {
+          --hx: 50%;
+          --hy: 40%;
+          position: relative;
+          overflow: hidden;
+          display: flex;
+          align-items: center;
+          min-height: 94vh;
+          color: #ffffff;
+          background:
+            linear-gradient(165deg, ${C.header} 0%, ${C.primary} 38%, ${C.secondary} 68%, ${C.primary} 100%);
+        }
+
+        /* Engineering grid, fades out toward the edges */
+        .hero-grid {
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          background-image:
+            linear-gradient(rgba(147, 197, 253, 0.055) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(147, 197, 253, 0.055) 1px, transparent 1px);
+          background-size: 64px 64px;
+          mask-image: radial-gradient(ellipse 75% 70% at 50% 45%, #000 35%, transparent 78%);
+          -webkit-mask-image: radial-gradient(ellipse 75% 70% at 50% 45%, #000 35%, transparent 78%);
+        }
+
+        .hero :global(.hero-canvas) {
+          position: absolute;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+          pointer-events: none;
+          opacity: 0.9;
+        }
+
+        /* Pointer-follow light */
+        .hero-spot {
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          background: radial-gradient(
+            circle 34rem at var(--hx) var(--hy),
+            rgba(37, 99, 235, 0.18) 0%,
+            rgba(37, 99, 235, 0.07) 38%,
+            transparent 68%
+          );
+          transition: background 300ms cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .hero-orb {
+          position: absolute;
+          border-radius: 50%;
+          pointer-events: none;
+          will-change: transform;
+        }
+        .hero-orb-1 {
+          width: 620px;
+          height: 620px;
+          top: -16%;
+          left: -12%;
+          background: radial-gradient(circle, rgba(37, 99, 235, 0.16) 0%, transparent 66%);
+          animation: orb1 16s ease-in-out infinite;
+        }
+        .hero-orb-2 {
+          width: 470px;
+          height: 470px;
+          right: -9%;
+          bottom: -10%;
+          background: radial-gradient(circle, rgba(59, 130, 246, 0.13) 0%, transparent 66%);
+          animation: orb2 19s ease-in-out infinite;
+        }
+        .hero-orb-3 {
+          width: 300px;
+          height: 300px;
+          top: 28%;
+          right: 14%;
+          background: radial-gradient(circle, rgba(96, 165, 250, 0.1) 0%, transparent 70%);
+          animation: orb3 13s ease-in-out infinite;
+        }
+
+        /* Slow sweeping light bar for a sense of depth */
+        .hero-beam {
+          position: absolute;
+          top: -40%;
+          left: -30%;
+          width: 45%;
+          height: 180%;
+          pointer-events: none;
+          transform: rotate(14deg);
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(147, 197, 253, 0.05),
+            transparent
+          );
+          animation: beam 14s ease-in-out infinite;
+        }
+
+        .hero-vignette {
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          background: radial-gradient(
+            ellipse 100% 100% at 50% 50%,
+            transparent 52%,
+            rgba(7, 26, 82, 0.72) 100%
+          );
+        }
+
+        .hero-inner {
+          position: relative;
+          z-index: 1;
+          width: 100%;
+          max-width: 62rem;
+          margin: 0 auto;
+          padding: 6.5rem 1.5rem;
+          text-align: center;
+        }
+
+        /* Entrance */
+        .hero :global(.reveal) {
+          opacity: 0;
+          transform: translateY(26px) scale(0.985);
+          filter: blur(7px);
+          transition:
+            opacity 1s cubic-bezier(0.16, 1, 0.3, 1),
+            transform 1s cubic-bezier(0.16, 1, 0.3, 1),
+            filter 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .hero :global(.reveal.is-in) {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+          filter: blur(0);
+        }
+
+        .hero-title-wrap { margin-bottom: 1.6rem; }
+
+        .hero-title {
+          margin: 0;
+          font-size: clamp(2.4rem, 6.4vw, 4.6rem);
+          font-weight: 800;
+          line-height: 1.06;
+          letter-spacing: -0.032em;
+        }
+        .hl-1 { color: #ffffff; }
+        .hl-2 { color: #C7D7F5; }
+        .hl-3 {
+          display: inline-block;
+          position: relative;
+          background: linear-gradient(96deg, #60A5FA 0%, #93C5FD 42%, #FFFFFF 72%, #60A5FA 100%);
+          background-size: 220% auto;
+          -webkit-background-clip: text;
+          background-clip: text;
+          -webkit-text-fill-color: transparent;
+          animation: shimmer 6s linear infinite;
+        }
+        /* Underline flourish that draws itself in */
+        .hl-3::after {
+          content: '';
+          position: absolute;
+          left: 4%;
+          right: 4%;
+          bottom: -0.14em;
+          height: 2px;
+          border-radius: 2px;
+          background: linear-gradient(90deg, transparent, ${C.accentHover}, transparent);
+          transform: scaleX(0);
+          transform-origin: center;
+          animation: draw 1.1s cubic-bezier(0.16, 1, 0.3, 1) 1.15s forwards;
+        }
+
+        .hero-copy-wrap { margin-bottom: 2.9rem; }
+        .hero-copy {
+          max-width: 44rem;
+          margin: 0 auto;
+          font-size: clamp(1rem, 1.6vw, 1.175rem);
+          font-weight: 500;
+          line-height: 1.72;
+          color: rgba(214, 227, 255, 0.92);
+        }
+        .hero-copy-sub {
+          display: inline-block;
+          margin-top: 0.55rem;
+          font-size: 0.95em;
+          color: rgba(190, 209, 247, 0.72);
+        }
+
+        /* CTAs - side by side on desktop, stacked on small screens */
+        .hero-cta {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          gap: 0.85rem;
+          flex-wrap: wrap;
+        }
+
+        .hero :global(.hbtn) {
+          position: relative;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 13.5rem;
+          min-height: 3.4rem;
+          padding: 0 1.9rem;
+          overflow: hidden;
+          font-size: 0.975rem;
+          font-weight: 700;
+          letter-spacing: 0.008em;
+          text-decoration: none;
+          border-radius: 14px;
+          transition:
+            transform 420ms cubic-bezier(0.16, 1, 0.3, 1),
+            box-shadow 420ms cubic-bezier(0.16, 1, 0.3, 1),
+            background 260ms ease,
+            border-color 260ms ease;
+        }
+        .hero :global(.hbtn-face) {
+          position: relative;
+          z-index: 1;
+          display: inline-flex;
+          align-items: center;
+          gap: 0.6rem;
+        }
+        .hero :global(.hbtn-arrow) {
+          display: inline-block;
+          transition: transform 340ms cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .hero :global(.hbtn:hover .hbtn-arrow) { transform: translateX(5px); }
+
+        .hero :global(.hbtn-primary) {
+          color: #ffffff;
+          background: linear-gradient(135deg, ${C.accent} 0%, ${C.accentHover} 100%);
+          box-shadow:
+            0 10px 30px rgba(37, 99, 235, 0.36),
+            inset 0 1px 0 rgba(255, 255, 255, 0.22);
+        }
+        .hero :global(.hbtn-primary:hover) {
+          transform: translateY(-3px);
+          box-shadow:
+            0 18px 46px rgba(37, 99, 235, 0.48),
+            inset 0 1px 0 rgba(255, 255, 255, 0.3);
+        }
+        /* Sheen wipes across on hover */
+        .hero :global(.hbtn-sheen) {
+          position: absolute;
+          top: 0;
+          left: -60%;
+          width: 45%;
+          height: 100%;
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255, 255, 255, 0.28),
+            transparent
+          );
+          transform: skewX(-18deg);
+          transition: left 620ms cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .hero :global(.hbtn-primary:hover .hbtn-sheen) { left: 115%; }
+
+        .hero :global(.hbtn-ghost) {
+          color: #E3ECFF;
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(147, 197, 253, 0.3);
+          backdrop-filter: blur(10px);
+          -webkit-backdrop-filter: blur(10px);
+        }
+        .hero :global(.hbtn-ghost:hover) {
+          transform: translateY(-3px);
+          color: #ffffff;
+          background: rgba(59, 130, 246, 0.16);
+          border-color: rgba(147, 197, 253, 0.55);
+          box-shadow: 0 14px 34px rgba(7, 26, 82, 0.45);
+        }
+        .hero :global(.hbtn:focus-visible) {
+          outline: 2px solid #93C5FD;
+          outline-offset: 3px;
+        }
+
+        .hero-scroll {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 6px;
+          margin-top: 3.6rem;
+          animation: bob 2.6s ease-in-out infinite;
+        }
+        .hero-scroll-line {
+          width: 1px;
+          height: 34px;
+          background: linear-gradient(180deg, rgba(147, 197, 253, 0.75), transparent);
+        }
+        .hero-scroll-dot {
+          width: 4px;
+          height: 4px;
+          border-radius: 50%;
+          background: ${C.accentHover};
+        }
+
+        @keyframes orb1 {
           0%, 100% { transform: translate(0, 0) scale(1); }
-          40%       { transform: translate(30px, -20px) scale(1.06); }
-          70%       { transform: translate(-15px, 15px) scale(0.96); }
+          40% { transform: translate(34px, -22px) scale(1.06); }
+          70% { transform: translate(-16px, 16px) scale(0.96); }
         }
-        @keyframes cinOrb2 {
+        @keyframes orb2 {
           0%, 100% { transform: translate(0, 0) scale(1); }
-          35%       { transform: translate(-25px, -18px) scale(1.04); }
-          70%       { transform: translate(20px, 22px) scale(0.97); }
+          35% { transform: translate(-28px, -20px) scale(1.05); }
+          70% { transform: translate(22px, 24px) scale(0.97); }
         }
-        @keyframes cinOrb3 {
+        @keyframes orb3 {
           0%, 100% { transform: translate(0, 0) scale(1); }
-          50%       { transform: translate(18px, -12px) scale(1.08); }
+          50% { transform: translate(20px, -14px) scale(1.08); }
         }
-        @keyframes goldShimmer {
-          0%   { background-position: 0% center; }
-          100% { background-position: 200% center; }
+        @keyframes beam {
+          0%, 100% { transform: translateX(0) rotate(14deg); opacity: 0; }
+          45% { opacity: 1; }
+          100% { transform: translateX(260%) rotate(14deg); }
         }
-        @keyframes btnGlow {
-          0%, 100% { box-shadow: 0 0 32px rgba(212,175,55,0.32), 0 4px 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.25); }
-          50%       { box-shadow: 0 0 48px rgba(212,175,55,0.46), 0 4px 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.25); }
+        @keyframes shimmer {
+          0% { background-position: 0% center; }
+          100% { background-position: 220% center; }
         }
-        @keyframes scrollBob {
-          0%, 100% { transform: translateY(0); opacity: 0.35; }
-          50%       { transform: translateY(6px); opacity: 0.55; }
+        @keyframes draw {
+          from { transform: scaleX(0); }
+          to { transform: scaleX(1); }
         }
-        @keyframes heroPing {
-          0%   { transform: scale(1); opacity: 0.6; }
-          100% { transform: scale(2.2); opacity: 0; }
+        @keyframes bob {
+          0%, 100% { transform: translateY(0); opacity: 0.38; }
+          50% { transform: translateY(7px); opacity: 0.62; }
+        }
+
+        @media (max-width: 620px) {
+          .hero { min-height: 88vh; }
+          .hero-inner { padding: 5rem 1.25rem; }
+          .hero-cta { flex-direction: column; }
+          .hero :global(.hbtn) { width: 100%; max-width: 20rem; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .hero :global(.reveal) {
+            opacity: 1;
+            transform: none;
+            filter: none;
+            transition: none;
+          }
+          .hero-orb,
+          .hero-beam,
+          .hero-scroll,
+          .hl-3,
+          .hl-3::after {
+            animation: none;
+          }
+          .hl-3::after { transform: scaleX(1); }
+          .hero-spot { transition: none; }
         }
       `}</style>
     </section>
