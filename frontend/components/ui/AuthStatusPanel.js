@@ -1,16 +1,19 @@
 /**
- * AuthStatusPanel — the premium "verifying → verified" stage that replaces the
+ * AuthStatusPanel -- the premium "verifying -> verified" stage that replaces the
  * login form's content while a sign-in is in flight.
  *
- * Motion design (mirrors the reference experience):
+ * Motion design:
  *  - verifying: concentric rings breathe outward from a glowing core while a
- *    conic sweep rotates — continuous, calm, never jumpy.
+ *    sweep rotates -- continuous, calm, never jumpy.
  *  - success:   the sweep resolves into a ring that DRAWS itself, a halo
  *    expands once, then the tick strokes on with a spring overshoot.
  *  - label text cross-fades with a slight rise instead of hard-swapping.
  *
- * The component never invents copy — `label` is always passed in by the caller,
+ * The component never invents copy -- `label` is always passed in by the caller,
  * so each portal keeps its own exact wording ("Signing in...", "Welcome, X!").
+ * The two subline strings are unchanged from the previous version.
+ *
+ * Recoloured for the bright system: blue while working, green on success.
  *
  * phase:   'verifying' | 'success'
  * exiting: true while the panel is playing its exit animation
@@ -78,15 +81,15 @@ export default function AuthStatusPanel({ phase, label, exiting = false, subline
 
         .stage {
           position: relative;
-          width: 76px;
-          height: 76px;
-          margin-bottom: 18px;
+          width: 80px;
+          height: 80px;
+          margin-bottom: 20px;
           display: flex;
           align-items: center;
           justify-content: center;
         }
 
-        /* ── Verifying ───────────────────────────────────────── */
+        /* -- Verifying -------------------------------------------------- */
         .radar,
         .done {
           position: relative;
@@ -100,7 +103,7 @@ export default function AuthStatusPanel({ phase, label, exiting = false, subline
           position: absolute;
           inset: 6px;
           border-radius: 50%;
-          border: 1.5px solid rgba(92, 225, 230, 0.75);
+          border: 1.5px solid rgba(37, 99, 235, 0.5);
           opacity: 0;
           transform: scale(0.5);
           animation: ringOut 2.1s cubic-bezier(0.16, 1, 0.3, 1) infinite;
@@ -110,7 +113,7 @@ export default function AuthStatusPanel({ phase, label, exiting = false, subline
         .ring-3 { animation-delay: 1.4s; }
         @keyframes ringOut {
           0%   { transform: scale(0.45); opacity: 0; }
-          18%  { opacity: 0.85; }
+          18%  { opacity: 0.8; }
           100% { transform: scale(1.55); opacity: 0; }
         }
 
@@ -118,9 +121,9 @@ export default function AuthStatusPanel({ phase, label, exiting = false, subline
           position: absolute;
           inset: 0;
           border-radius: 50%;
-          border: 2px solid transparent;
-          border-top-color: #5ce1e6;
-          border-right-color: rgba(92, 225, 230, 0.35);
+          border: 2.5px solid #eff6ff;
+          border-top-color: #2563eb;
+          border-right-color: rgba(37, 99, 235, 0.4);
           animation: sweepSpin 0.95s linear infinite;
           will-change: transform;
         }
@@ -132,22 +135,22 @@ export default function AuthStatusPanel({ phase, label, exiting = false, subline
           width: 10px;
           height: 10px;
           border-radius: 50%;
-          background: #5ce1e6;
-          box-shadow: 0 0 14px rgba(92, 225, 230, 0.85), 0 0 34px rgba(92, 225, 230, 0.35);
+          background: #2563eb;
+          box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.1);
           animation: coreBreathe 1.5s cubic-bezier(0.45, 0, 0.55, 1) infinite;
           will-change: transform;
         }
         @keyframes coreBreathe {
-          0%, 100% { transform: scale(0.82); opacity: 0.85; }
+          0%, 100% { transform: scale(0.82); opacity: 0.9; }
           50%      { transform: scale(1.12); opacity: 1; }
         }
 
-        /* ── Success ────────────────────────────────────────── */
+        /* -- Success ---------------------------------------------------- */
         .halo {
           position: absolute;
           inset: -6px;
           border-radius: 50%;
-          border: 1.5px solid rgba(52, 211, 153, 0.55);
+          border: 1.5px solid rgba(34, 197, 94, 0.45);
           opacity: 0;
           transform: scale(0.6);
           animation: haloOut 0.95s cubic-bezier(0.16, 1, 0.3, 1) 0.12s forwards;
@@ -172,19 +175,18 @@ export default function AuthStatusPanel({ phase, label, exiting = false, subline
         }
         .track {
           fill: none;
-          stroke: rgba(52, 211, 153, 0.16);
-          stroke-width: 3;
+          stroke: rgba(34, 197, 94, 0.16);
+          stroke-width: 3.5;
         }
         .draw {
           fill: none;
-          stroke: #34d399;
-          stroke-width: 3;
+          stroke: #22c55e;
+          stroke-width: 3.5;
           stroke-linecap: round;
           stroke-dasharray: 170;
           stroke-dashoffset: 170;
           transform: rotate(-90deg);
           transform-origin: 32px 32px;
-          filter: drop-shadow(0 0 7px rgba(52, 211, 153, 0.45));
           animation: ringDraw 0.62s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
         @keyframes ringDraw {
@@ -192,42 +194,41 @@ export default function AuthStatusPanel({ phase, label, exiting = false, subline
         }
         .tick {
           fill: none;
-          stroke: #34d399;
-          stroke-width: 4;
+          stroke: #16a34a;
+          stroke-width: 4.5;
           stroke-linecap: round;
           stroke-linejoin: round;
           stroke-dasharray: 40;
           stroke-dashoffset: 40;
-          filter: drop-shadow(0 0 6px rgba(52, 211, 153, 0.4));
           animation: tickDraw 0.34s cubic-bezier(0.16, 1, 0.3, 1) 0.38s forwards;
         }
         @keyframes tickDraw {
           to { stroke-dashoffset: 0; }
         }
 
-        /* ── Copy ───────────────────────────────────────────── */
+        /* -- Copy ------------------------------------------------------- */
         .label {
-          color: #eef2f7;
-          font-size: 0.925rem;
-          font-weight: 600;
-          letter-spacing: 0.01em;
+          color: #111827;
+          font-size: 1rem;
+          font-weight: 700;
+          letter-spacing: -0.005em;
           line-height: 1.35;
           margin: 0;
-          max-width: 17rem;
+          max-width: 18rem;
           opacity: 0;
           animation: riseIn 0.44s cubic-bezier(0.16, 1, 0.3, 1) 0.1s forwards;
         }
         .sub {
-          margin: 6px 0 0;
-          font-size: 0.735rem;
-          font-weight: 500;
+          margin: 7px 0 0;
+          font-size: 0.75rem;
+          font-weight: 600;
           letter-spacing: 0.03em;
-          color: rgba(148, 163, 184, 0.9);
+          color: #6b7280;
           opacity: 0;
           animation: riseIn 0.44s cubic-bezier(0.16, 1, 0.3, 1) 0.2s forwards;
         }
         .panel.is-success .sub {
-          color: #34d399;
+          color: #15803d;
           animation-delay: 0.52s;
         }
         @keyframes riseIn {
@@ -242,7 +243,7 @@ export default function AuthStatusPanel({ phase, label, exiting = false, subline
             transform: none !important;
           }
           .draw, .tick { stroke-dashoffset: 0 !important; }
-          .ring { opacity: 0.35 !important; }
+          .ring { opacity: 0.3 !important; }
         }
       `}</style>
     </div>
