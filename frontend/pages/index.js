@@ -340,7 +340,7 @@ export default function HomePage() {
       <Footer />
 
       <style jsx>{`
-        .hp { overflow-x: hidden; background: ${C.bg}; }
+        .hp { overflow-x: hidden; overflow-x: clip; background: ${C.bg}; }
 
         .sec { position: relative; padding: 7rem 1rem; }
         .shell { max-width: 64rem; margin: 0 auto; }

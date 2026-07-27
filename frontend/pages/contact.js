@@ -100,6 +100,7 @@ export default function ContactPage() {
           flex-direction: column;
           min-height: 100vh;
           overflow-x: hidden;
+          overflow-x: clip;
           background: #f8fafc;
         }
 

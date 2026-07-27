@@ -280,6 +280,7 @@ export default function AnimatedHero() {
           --hx: 50%;
           --hy: 40%;
           position: relative;
+          z-index: 0;
           overflow: hidden;
           display: flex;
           align-items: center;

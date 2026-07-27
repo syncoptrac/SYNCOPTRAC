@@ -133,7 +133,8 @@ export default function Navbar() {
         .nb {
           position: sticky;
           top: 0;
-          z-index: 50;
+          z-index: 100;
+          isolation: isolate;
           background: #071a52;
           transition: background 420ms cubic-bezier(0.16, 1, 0.3, 1),
             box-shadow 420ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -146,6 +147,7 @@ export default function Navbar() {
         }
         .nb-hair {
           position: absolute;
+          pointer-events: none;
           left: 0;
           right: 0;
           bottom: 0;
@@ -189,7 +191,7 @@ export default function Navbar() {
           max-width: 1240px;
           margin: 0 auto;
           padding: 0 24px;
-          height: 68px;
+          min-height: 68px;
           display: flex;
           align-items: center;
           justify-content: space-between;
@@ -276,7 +278,7 @@ export default function Navbar() {
           font-size: 13.5px;
           font-weight: 600;
           letter-spacing: 0.01em;
-          color: rgba(199, 215, 245, 0.78);
+          color: rgba(228, 238, 255, 0.94);
           text-decoration: none;
           transition: color 260ms ease;
           overflow: hidden;
@@ -341,7 +343,7 @@ export default function Navbar() {
           border-radius: 10px;
           font-size: 13.5px;
           font-weight: 600;
-          color: rgba(214, 227, 255, 0.85);
+          color: rgba(233, 241, 255, 0.95);
           border: 1px solid rgba(147, 197, 253, 0.24);
           background: rgba(255, 255, 255, 0.03);
           text-decoration: none;
@@ -533,7 +535,7 @@ export default function Navbar() {
         }
         .nb-mghost {
           font-weight: 600;
-          color: rgba(214, 227, 255, 0.85);
+          color: rgba(233, 241, 255, 0.95);
           border: 1px solid rgba(147, 197, 253, 0.24);
           margin-bottom: 10px;
         }
