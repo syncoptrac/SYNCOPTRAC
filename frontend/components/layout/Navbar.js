@@ -1,10 +1,18 @@
 import Link from 'next/link';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 
 /* Premium enterprise chrome - deep dark blue design system.
    header #071A52 / primary #0B1F4D / secondary #12356D
    accent #2563EB / accent hover #3B82F6
+
+   Rebuilt navbar:
+   - position: fixed + in-flow spacer, so no ancestor overflow can break it
+   - hides on scroll down, reveals on scroll up
+   - responsive tiers driven by matchMedia in JS, not CSS media queries,
+     so layout can never collapse if a breakpoint fails to apply
+   - every structural property is inline; only colour, hover and motion
+     live in the stylesheet
    Content is identical to the previous navbar: same links, same labels,
    same order, same routes. Only the presentation changed. */
 
@@ -16,16 +24,68 @@ const LINKS = [
   { href: '/contact', label: 'Contact' },
 ];
 
+const NAV_H = 68;
+const EASE = 'cubic-bezier(0.16, 1, 0.3, 1)';
+
 export default function Navbar() {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [away, setAway] = useState(false);
+  const [desktop, setDesktop] = useState(true);
+  const [wide, setWide] = useState(true);
+  const openRef = useRef(false);
   const router = useRouter();
 
   useEffect(() => {
-    const handleScroll = () => setScrolled(window.scrollY > 24);
-    handleScroll();
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
+    openRef.current = open;
+  }, [open]);
+
+  /* Responsive tiers without CSS media queries */
+  useEffect(() => {
+    const mqD = window.matchMedia('(min-width: 768px)');
+    const mqW = window.matchMedia('(min-width: 1040px)');
+    const apply = () => {
+      setDesktop(mqD.matches);
+      setWide(mqW.matches);
+      if (mqD.matches) setOpen(false);
+    };
+    apply();
+    mqD.addEventListener('change', apply);
+    mqW.addEventListener('change', apply);
+    return () => {
+      mqD.removeEventListener('change', apply);
+      mqW.removeEventListener('change', apply);
+    };
+  }, []);
+
+  /* Slide up when scrolling down, slide back down when scrolling up */
+  useEffect(() => {
+    let lastY = window.scrollY || 0;
+    let raf = 0;
+    const run = () => {
+      raf = 0;
+      const y = window.scrollY || 0;
+      setScrolled(y > 10);
+      if (openRef.current) {
+        lastY = y;
+        setAway(false);
+        return;
+      }
+      const d = y - lastY;
+      if (Math.abs(d) < 7) return;
+      if (y < NAV_H + 30) setAway(false);
+      else setAway(d > 0);
+      lastY = y;
+    };
+    const onScroll = () => {
+      if (!raf) raf = requestAnimationFrame(run);
+    };
+    run();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
   }, []);
 
   useEffect(() => {
@@ -33,371 +93,355 @@ export default function Navbar() {
   }, [router.pathname]);
 
   const isActive = (href) => router.pathname === href;
+  const compact = desktop && !wide;
+
+  const S = {
+    bar: {
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      zIndex: 1000,
+      transform: away ? 'translateY(-100%)' : 'translateY(0)',
+      transition: 'transform 460ms ' + EASE + ', background 420ms ease, box-shadow 420ms ease',
+      willChange: 'transform',
+    },
+    inner: {
+      position: 'relative',
+      zIndex: 2,
+      maxWidth: 1240,
+      margin: '0 auto',
+      minHeight: NAV_H,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: compact ? 12 : 20,
+      padding: desktop ? '0 22px' : '0 16px',
+    },
+    brand: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      textDecoration: 'none',
+      flexShrink: 0,
+    },
+    logo: {
+      position: 'relative',
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: 30,
+      height: 30,
+      flexShrink: 0,
+    },
+    logoImg: { width: 30, height: 30, objectFit: 'contain', display: 'block' },
+    word: { display: 'flex', flexDirection: 'column', lineHeight: 1.05 },
+    mark: {
+      fontSize: wide ? 16 : 15,
+      fontWeight: 800,
+      letterSpacing: '0.045em',
+      whiteSpace: 'nowrap',
+    },
+    tag: {
+      display: wide ? 'block' : 'none',
+      marginTop: 3,
+      fontSize: 7.6,
+      fontWeight: 700,
+      letterSpacing: '0.085em',
+      whiteSpace: 'nowrap',
+    },
+    links: {
+      display: desktop ? 'flex' : 'none',
+      alignItems: 'center',
+      gap: 1,
+      flexShrink: 0,
+    },
+    link: {
+      position: 'relative',
+      display: 'inline-flex',
+      alignItems: 'center',
+      padding: compact ? '8px 10px' : '9px 13px',
+      fontSize: compact ? 12.8 : 13.5,
+      fontWeight: 600,
+      letterSpacing: '0.01em',
+      textDecoration: 'none',
+      whiteSpace: 'nowrap',
+    },
+    actions: {
+      display: desktop ? 'flex' : 'none',
+      alignItems: 'center',
+      gap: compact ? 7 : 10,
+      flexShrink: 0,
+    },
+    ghost: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      padding: compact ? '8px 11px' : '9px 14px',
+      borderRadius: 10,
+      fontSize: compact ? 12.4 : 13,
+      fontWeight: 600,
+      textDecoration: 'none',
+      whiteSpace: 'nowrap',
+    },
+    cta: {
+      position: 'relative',
+      display: 'inline-flex',
+      alignItems: 'center',
+      overflow: 'hidden',
+      padding: compact ? '9px 13px' : '10px 17px',
+      borderRadius: 10,
+      fontSize: compact ? 12.6 : 13.2,
+      fontWeight: 700,
+      textDecoration: 'none',
+      whiteSpace: 'nowrap',
+    },
+    burger: {
+      display: desktop ? 'none' : 'flex',
+      flexDirection: 'column',
+      justifyContent: 'center',
+      gap: 4.5,
+      width: 42,
+      height: 42,
+      padding: '0 9px',
+      borderRadius: 11,
+      cursor: 'pointer',
+      flexShrink: 0,
+    },
+    sheet: {
+      display: desktop ? 'none' : 'block',
+      overflow: 'hidden',
+      maxHeight: open ? 480 : 0,
+      transition: 'max-height 520ms ' + EASE,
+    },
+    sheetInner: { padding: '6px 16px 20px' },
+    spacer: { height: NAV_H, flexShrink: 0 },
+  };
 
   return (
-    <nav className={'nb' + (scrolled ? ' is-stuck' : '')}>
-      <span className="nb-hair" aria-hidden="true" />
-      <span className="nb-aura" aria-hidden="true" />
+    <>
+      <nav
+        className={'nvx' + (scrolled ? ' is-stuck' : '')}
+        style={S.bar}
+        aria-label="Main"
+      >
+        <span className="nvx-hair" aria-hidden="true" />
 
-      <div className="nb-inner">
-        {/* Brand */}
-        <Link href="/" className="nb-brand">
-          <span className="nb-logo" aria-hidden="true">
-            <img src="/logo.png" alt="SYNCOPTRAC" className="nb-logo-img" />
-            <span className="nb-logo-ring" />
-          </span>
-          <span className="nb-word">
-            <span className="nb-mark">
-              <span className="nb-mark-s">S</span>
-              <span className="nb-mark-rest">YNCOPTRAC</span>
+        <div style={S.inner}>
+          {/* Brand */}
+          <Link href="/" className="nvx-brand" style={S.brand}>
+            <span style={S.logo} aria-hidden="true">
+              <img src="/logo.png" alt="SYNCOPTRAC" className="nvx-logo-img" style={S.logoImg} />
             </span>
-            <span className="nb-tag">
-              WHERE COMMUNICATION GETS ORGANISED AND NOTHING IS MISSED.
+            <span style={S.word}>
+              <span style={S.mark}>
+                <span className="nvx-mark-s">S</span>
+                <span className="nvx-mark-rest">YNCOPTRAC</span>
+              </span>
+              <span className="nvx-tag" style={S.tag}>
+                WHERE COMMUNICATION GETS ORGANISED AND NOTHING IS MISSED.
+              </span>
             </span>
-          </span>
-        </Link>
+          </Link>
 
-        {/* Desktop links */}
-        <div className="nb-links">
-          {LINKS.map((l) => (
-            <Link
-              key={l.href}
-              href={l.href}
-              className={'nb-link' + (isActive(l.href) ? ' is-on' : '')}
-            >
-              <span className="nb-link-face">{l.label}</span>
-              <span className="nb-link-rail" aria-hidden="true" />
-              <span className="nb-link-glow" aria-hidden="true" />
+          {/* Desktop links */}
+          <div style={S.links}>
+            {LINKS.map((l) => (
+              <Link
+                key={l.href}
+                href={l.href}
+                className={'nvx-link' + (isActive(l.href) ? ' is-on' : '')}
+                style={S.link}
+              >
+                <span className="nvx-link-face">{l.label}</span>
+                <span className="nvx-link-rail" aria-hidden="true" />
+              </Link>
+            ))}
+          </div>
+
+          {/* Desktop actions */}
+          <div style={S.actions}>
+            <Link href="/institute/login" className="nvx-ghost" style={S.ghost}>
+              Institute Login
             </Link>
-          ))}
-        </div>
-
-        {/* Desktop actions */}
-        <div className="nb-actions">
-          <Link href="/institute/login" className="nb-ghost">
-            Institute Login
-          </Link>
-          <Link href="/get-started" className="nb-cta">
-            <span className="nb-cta-sheen" aria-hidden="true" />
-            <span className="nb-cta-face">Get Started</span>
-          </Link>
-        </div>
-
-        {/* Mobile trigger */}
-        <button
-          type="button"
-          className={'nb-burger' + (open ? ' is-open' : '')}
-          onClick={() => setOpen((o) => !o)}
-          aria-label="Toggle menu"
-          aria-expanded={open}
-        >
-          <span className="nb-bar nb-bar-1" />
-          <span className="nb-bar nb-bar-2" />
-          <span className="nb-bar nb-bar-3" />
-        </button>
-      </div>
-
-      {/* Mobile drawer */}
-      <div className={'nb-sheet' + (open ? ' is-open' : '')}>
-        <div className="nb-sheet-inner">
-          {LINKS.map((l, i) => (
-            <Link
-              key={l.href}
-              href={l.href}
-              className={'nb-mlink' + (isActive(l.href) ? ' is-on' : '')}
-              style={{ transitionDelay: (open ? 40 + i * 45 : 0) + 'ms' }}
-            >
-              <span className="nb-mdot" aria-hidden="true" />
-              {l.label}
+            <Link href="/get-started" className="nvx-cta" style={S.cta}>
+              <span className="nvx-cta-sheen" aria-hidden="true" />
+              <span className="nvx-cta-face">Get Started</span>
             </Link>
-          ))}
-          <div className="nb-msplit" aria-hidden="true" />
-          <Link
-            href="/institute/login"
-            className="nb-mghost"
-            style={{ transitionDelay: (open ? 40 + LINKS.length * 45 : 0) + 'ms' }}
-          >
-            Institute Login
-          </Link>
-          <Link
-            href="/get-started"
-            className="nb-mcta"
-            style={{ transitionDelay: (open ? 80 + LINKS.length * 45 : 0) + 'ms' }}
-          >
-            Get Started
-          </Link>
-        </div>
-      </div>
+          </div>
 
-      <style jsx>{`
-        .nb {
-          position: sticky;
-          top: 0;
-          z-index: 100;
-          isolation: isolate;
+          {/* Mobile trigger */}
+          <button
+            type="button"
+            className={'nvx-burger' + (open ? ' is-open' : '')}
+            style={S.burger}
+            onClick={() => setOpen((o) => !o)}
+            aria-label="Toggle menu"
+            aria-expanded={open}
+          >
+            <span className="nvx-bar nvx-bar-1" />
+            <span className="nvx-bar nvx-bar-2" />
+            <span className="nvx-bar nvx-bar-3" />
+          </button>
+        </div>
+
+        {/* Mobile drawer */}
+        <div className={'nvx-sheet' + (open ? ' is-open' : '')} style={S.sheet}>
+          <div className="nvx-sheet-inner" style={S.sheetInner}>
+            {LINKS.map((l, i) => (
+              <Link
+                key={l.href}
+                href={l.href}
+                className={'nvx-mlink' + (isActive(l.href) ? ' is-on' : '')}
+                style={{ transitionDelay: (open ? 40 + i * 45 : 0) + 'ms' }}
+              >
+                <span className="nvx-mdot" aria-hidden="true" />
+                {l.label}
+              </Link>
+            ))}
+            <span className="nvx-msplit" aria-hidden="true" />
+            <Link
+              href="/institute/login"
+              className="nvx-mghost"
+              style={{ transitionDelay: (open ? 40 + LINKS.length * 45 : 0) + 'ms' }}
+            >
+              Institute Login
+            </Link>
+            <Link
+              href="/get-started"
+              className="nvx-mcta"
+              style={{ transitionDelay: (open ? 80 + LINKS.length * 45 : 0) + 'ms' }}
+            >
+              Get Started
+            </Link>
+          </div>
+        </div>
+      </nav>
+
+      {/* Keeps page content exactly where it was when the bar was in flow */}
+      <div style={S.spacer} aria-hidden="true" />
+
+      <style jsx global>{`
+        .nvx {
           background: #071a52;
-          transition: background 420ms cubic-bezier(0.16, 1, 0.3, 1),
-            box-shadow 420ms cubic-bezier(0.16, 1, 0.3, 1);
         }
-        .nb.is-stuck {
-          background: rgba(7, 26, 82, 0.82);
-          backdrop-filter: blur(22px) saturate(170%);
-          -webkit-backdrop-filter: blur(22px) saturate(170%);
-          box-shadow: 0 10px 40px rgba(3, 12, 40, 0.45);
+        .nvx.is-stuck {
+          background: rgba(7, 26, 82, 0.9);
+          backdrop-filter: blur(20px) saturate(170%);
+          -webkit-backdrop-filter: blur(20px) saturate(170%);
+          box-shadow: 0 10px 38px rgba(3, 12, 40, 0.46);
         }
-        .nb-hair {
+        .nvx-hair {
           position: absolute;
-          pointer-events: none;
           left: 0;
           right: 0;
           bottom: 0;
           height: 1px;
+          pointer-events: none;
           background: linear-gradient(
             90deg,
             transparent,
-            rgba(37, 99, 235, 0.55),
-            rgba(59, 130, 246, 0.75),
-            rgba(37, 99, 235, 0.55),
+            rgba(37, 99, 235, 0.5),
+            rgba(59, 130, 246, 0.8),
+            rgba(37, 99, 235, 0.5),
             transparent
           );
-          opacity: 0.5;
+          opacity: 0.55;
           transition: opacity 420ms ease;
         }
-        .nb.is-stuck .nb-hair {
+        .nvx.is-stuck .nvx-hair {
           opacity: 1;
-        }
-        .nb-aura {
-          position: absolute;
-          top: -60%;
-          left: 50%;
-          width: 640px;
-          height: 180%;
-          transform: translateX(-50%);
-          background: radial-gradient(
-            ellipse at center,
-            rgba(37, 99, 235, 0.16) 0%,
-            transparent 70%
-          );
-          pointer-events: none;
-          opacity: 0;
-          transition: opacity 520ms ease;
-        }
-        .nb.is-stuck .nb-aura {
-          opacity: 1;
-        }
-        .nb-inner {
-          position: relative;
-          z-index: 2;
-          max-width: 1240px;
-          margin: 0 auto;
-          padding: 0 24px;
-          min-height: 68px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 20px;
         }
 
-        .nb-brand {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          text-decoration: none;
-          flex-shrink: 0;
+        .nvx-logo-img {
+          transition: transform 520ms cubic-bezier(0.16, 1, 0.3, 1);
         }
-        .nb-logo {
-          position: relative;
-          display: block;
-          width: 38px;
-          height: 38px;
-          flex-shrink: 0;
+        .nvx-brand:hover .nvx-logo-img {
+          transform: rotate(-8deg) scale(1.08);
         }
-        .nb-logo-img {
-          width: 38px;
-          height: 38px;
-          border-radius: 11px;
-          object-fit: cover;
-          display: block;
-          position: relative;
-          z-index: 2;
-          transition: transform 420ms cubic-bezier(0.34, 1.56, 0.64, 1);
-        }
-        .nb-logo-ring {
-          position: absolute;
-          inset: -4px;
-          border-radius: 15px;
-          background: linear-gradient(
-            135deg,
-            rgba(37, 99, 235, 0.55),
-            rgba(59, 130, 246, 0.15)
-          );
-          opacity: 0;
-          transition: opacity 420ms ease;
-        }
-        .nb-brand:hover .nb-logo-img {
-          transform: scale(1.07);
-        }
-        .nb-brand:hover .nb-logo-ring {
-          opacity: 1;
-        }
-        .nb-word {
-          display: flex;
-          flex-direction: column;
-          gap: 3px;
-          min-width: 0;
-        }
-        .nb-mark {
-          font-size: 17px;
-          font-weight: 800;
-          line-height: 1;
-          letter-spacing: 0.04em;
-        }
-        .nb-mark-s {
+        .nvx-mark-s {
           color: #5ce1e6;
         }
-        .nb-mark-rest {
+        .nvx-mark-rest {
           color: #ffffff;
         }
-        .nb-tag {
-          font-size: 9.5px;
-          line-height: 1.1;
-          letter-spacing: 0.06em;
-          color: rgba(190, 209, 247, 0.5);
-          display: none;
+        .nvx-tag {
+          color: rgba(190, 209, 247, 0.62);
         }
 
-        .nb-links {
-          display: none;
-          align-items: center;
-          gap: 2px;
-        }
-        .nb-link {
-          position: relative;
-          padding: 9px 14px;
+        .nvx-link {
+          color: rgba(228, 238, 255, 0.92);
           border-radius: 10px;
-          font-size: 13.5px;
-          font-weight: 600;
-          letter-spacing: 0.01em;
-          color: rgba(228, 238, 255, 0.94);
-          text-decoration: none;
-          transition: color 260ms ease;
-          overflow: hidden;
+          transition: color 240ms ease, background 240ms ease;
         }
-        .nb-link-face {
-          position: relative;
-          z-index: 2;
+        .nvx-link:hover {
+          color: #ffffff;
+          background: rgba(37, 99, 235, 0.22);
         }
-        .nb-link-glow {
+        .nvx-link.is-on {
+          color: #ffffff;
+          background: rgba(37, 99, 235, 0.3);
+        }
+        .nvx-link-rail {
           position: absolute;
-          inset: 0;
-          border-radius: 10px;
-          background: linear-gradient(
-            180deg,
-            rgba(37, 99, 235, 0.22),
-            rgba(37, 99, 235, 0.06)
-          );
-          opacity: 0;
-          transform: scale(0.9);
-          transition: opacity 300ms ease, transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
-        }
-        .nb-link-rail {
-          position: absolute;
-          left: 14px;
-          right: 14px;
-          bottom: 5px;
+          left: 12px;
+          right: 12px;
+          bottom: 4px;
           height: 2px;
           border-radius: 2px;
           background: linear-gradient(90deg, #2563eb, #3b82f6);
           transform: scaleX(0);
-          transform-origin: left center;
+          transform-origin: center;
           transition: transform 380ms cubic-bezier(0.16, 1, 0.3, 1);
         }
-        .nb-link:hover {
-          color: #ffffff;
-        }
-        .nb-link:hover .nb-link-glow {
-          opacity: 1;
-          transform: scale(1);
-        }
-        .nb-link:hover .nb-link-rail {
-          transform: scaleX(1);
-        }
-        .nb-link.is-on {
-          color: #ffffff;
-        }
-        .nb-link.is-on .nb-link-glow {
-          opacity: 1;
-          transform: scale(1);
-        }
-        .nb-link.is-on .nb-link-rail {
+        .nvx-link:hover .nvx-link-rail,
+        .nvx-link.is-on .nvx-link-rail {
           transform: scaleX(1);
         }
 
-        .nb-actions {
-          display: none;
-          align-items: center;
-          gap: 10px;
-        }
-        .nb-ghost {
-          padding: 9px 16px;
-          border-radius: 10px;
-          font-size: 13.5px;
-          font-weight: 600;
+        .nvx-ghost {
           color: rgba(233, 241, 255, 0.95);
-          border: 1px solid rgba(147, 197, 253, 0.24);
+          border: 1px solid rgba(147, 197, 253, 0.3);
           background: rgba(255, 255, 255, 0.03);
-          text-decoration: none;
-          transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1),
-            border-color 300ms ease, background 300ms ease, color 300ms ease;
+          transition: color 240ms ease, border-color 240ms ease, background 240ms ease;
         }
-        .nb-ghost:hover {
+        .nvx-ghost:hover {
           color: #ffffff;
-          border-color: rgba(147, 197, 253, 0.5);
-          background: rgba(37, 99, 235, 0.16);
-          transform: translateY(-2px);
+          border-color: rgba(147, 197, 253, 0.55);
+          background: rgba(37, 99, 235, 0.2);
         }
-        .nb-cta {
-          position: relative;
-          overflow: hidden;
-          padding: 10px 18px;
-          border-radius: 10px;
-          font-size: 13.5px;
-          font-weight: 700;
+
+        .nvx-cta {
           color: #ffffff;
-          text-decoration: none;
           background: linear-gradient(135deg, #2563eb, #3b82f6);
-          box-shadow: 0 8px 22px rgba(37, 99, 235, 0.36),
-            inset 0 1px 0 rgba(255, 255, 255, 0.22);
-          transition: transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1),
-            box-shadow 320ms ease;
+          box-shadow: 0 6px 20px rgba(37, 99, 235, 0.34);
+          transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 300ms ease;
         }
-        .nb-cta-face {
+        .nvx-cta:hover {
+          transform: translateY(-1.5px);
+          box-shadow: 0 10px 28px rgba(37, 99, 235, 0.48);
+        }
+        .nvx-cta-face {
           position: relative;
           z-index: 2;
         }
-        .nb-cta-sheen {
+        .nvx-cta-sheen {
           position: absolute;
           top: 0;
           bottom: 0;
           left: -60%;
           width: 45%;
           background: linear-gradient(
-            100deg,
+            90deg,
             transparent,
             rgba(255, 255, 255, 0.4),
             transparent
           );
           transform: skewX(-18deg);
         }
-        .nb-cta:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 14px 32px rgba(37, 99, 235, 0.5),
-            inset 0 1px 0 rgba(255, 255, 255, 0.3);
+        .nvx-cta:hover .nvx-cta-sheen {
+          animation: nvxSheen 820ms ease;
         }
-        .nb-cta:hover .nb-cta-sheen {
-          animation: nbSheen 720ms cubic-bezier(0.16, 1, 0.3, 1);
-        }
-        @keyframes nbSheen {
+        @keyframes nvxSheen {
           from {
             left: -60%;
           }
@@ -406,195 +450,145 @@ export default function Navbar() {
           }
         }
 
-        .nb-burger {
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-          gap: 4px;
-          width: 42px;
-          height: 42px;
-          padding: 0 10px;
-          border-radius: 11px;
-          cursor: pointer;
-          background: rgba(255, 255, 255, 0.04);
-          border: 1px solid rgba(147, 197, 253, 0.2);
+        .nvx-burger {
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(147, 197, 253, 0.22);
           transition: background 260ms ease, border-color 260ms ease;
         }
-        .nb-burger.is-open {
-          background: rgba(37, 99, 235, 0.2);
-          border-color: rgba(147, 197, 253, 0.42);
+        .nvx-burger.is-open {
+          background: rgba(37, 99, 235, 0.22);
+          border-color: rgba(147, 197, 253, 0.45);
         }
-        .nb-bar {
+        .nvx-bar {
           display: block;
-          height: 1.7px;
+          height: 1.8px;
           width: 100%;
           border-radius: 2px;
-          background: rgba(214, 227, 255, 0.9);
-          transition: transform 380ms cubic-bezier(0.16, 1, 0.3, 1),
-            opacity 220ms ease, background 260ms ease;
+          background: rgba(219, 230, 255, 0.92);
+          transition: transform 380ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease,
+            background 260ms ease;
         }
-        .nb-burger.is-open .nb-bar {
+        .nvx-burger.is-open .nvx-bar {
           background: #93c5fd;
         }
-        .nb-burger.is-open .nb-bar-1 {
-          transform: translateY(5.7px) rotate(45deg);
+        .nvx-burger.is-open .nvx-bar-1 {
+          transform: translateY(6.3px) rotate(45deg);
         }
-        .nb-burger.is-open .nb-bar-2 {
+        .nvx-burger.is-open .nvx-bar-2 {
           opacity: 0;
           transform: scaleX(0.4);
         }
-        .nb-burger.is-open .nb-bar-3 {
-          transform: translateY(-5.7px) rotate(-45deg);
+        .nvx-burger.is-open .nvx-bar-3 {
+          transform: translateY(-6.3px) rotate(-45deg);
         }
 
-        .nb-sheet {
-          position: relative;
-          z-index: 2;
-          max-height: 0;
-          overflow: hidden;
-          transition: max-height 480ms cubic-bezier(0.16, 1, 0.3, 1);
-        }
-        .nb-sheet.is-open {
-          max-height: 460px;
-        }
-        .nb-sheet-inner {
-          padding: 8px 20px 22px;
-          background: linear-gradient(180deg, rgba(7, 26, 82, 0.98), rgba(11, 31, 77, 0.98));
+        .nvx-sheet-inner {
+          background: linear-gradient(180deg, rgba(7, 26, 82, 0.985), rgba(11, 31, 77, 0.985));
           backdrop-filter: blur(20px);
           -webkit-backdrop-filter: blur(20px);
           border-top: 1px solid rgba(147, 197, 253, 0.14);
         }
-        .nb-mlink {
+        .nvx-mlink {
           display: flex;
           align-items: center;
           gap: 10px;
           padding: 13px 14px;
-          margin-bottom: 2px;
-          border-radius: 12px;
+          border-radius: 11px;
           font-size: 14.5px;
           font-weight: 600;
-          color: rgba(206, 221, 250, 0.82);
           text-decoration: none;
+          color: rgba(214, 227, 255, 0.9);
           opacity: 0;
-          transform: translateX(-14px);
-          transition: opacity 420ms cubic-bezier(0.16, 1, 0.3, 1),
-            transform 420ms cubic-bezier(0.16, 1, 0.3, 1), background 240ms ease,
-            color 240ms ease;
+          transform: translateX(-10px);
+          transition: opacity 420ms ease, transform 420ms cubic-bezier(0.16, 1, 0.3, 1),
+            background 220ms ease, color 220ms ease;
         }
-        .nb-sheet.is-open .nb-mlink {
+        .nvx-sheet.is-open .nvx-mlink {
           opacity: 1;
           transform: translateX(0);
         }
-        .nb-mdot {
+        .nvx-mlink:hover,
+        .nvx-mlink.is-on {
+          color: #ffffff;
+          background: rgba(37, 99, 235, 0.2);
+        }
+        .nvx-mdot {
           width: 5px;
           height: 5px;
           border-radius: 50%;
-          background: rgba(147, 197, 253, 0.35);
-          flex-shrink: 0;
-          transition: background 240ms ease, transform 240ms ease;
+          background: rgba(147, 197, 253, 0.45);
+          transition: background 220ms ease, transform 220ms ease;
         }
-        .nb-mlink.is-on {
-          color: #ffffff;
-          background: rgba(37, 99, 235, 0.18);
-        }
-        .nb-mlink.is-on .nb-mdot {
+        .nvx-mlink.is-on .nvx-mdot,
+        .nvx-mlink:hover .nvx-mdot {
           background: #3b82f6;
           transform: scale(1.5);
         }
-        .nb-mlink:active {
-          background: rgba(37, 99, 235, 0.24);
-        }
-        .nb-msplit {
+        .nvx-msplit {
+          display: block;
           height: 1px;
-          margin: 12px 4px;
-          background: linear-gradient(
-            90deg,
-            transparent,
-            rgba(147, 197, 253, 0.22),
-            transparent
-          );
+          margin: 10px 4px 12px;
+          background: rgba(147, 197, 253, 0.14);
         }
-        .nb-mghost,
-        .nb-mcta {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 14px;
-          border-radius: 12px;
+        .nvx-mghost,
+        .nvx-mcta {
+          display: block;
+          text-align: center;
+          padding: 13px 16px;
+          border-radius: 11px;
           font-size: 14px;
+          font-weight: 700;
           text-decoration: none;
           opacity: 0;
-          transform: translateY(10px);
-          transition: opacity 420ms cubic-bezier(0.16, 1, 0.3, 1),
-            transform 420ms cubic-bezier(0.16, 1, 0.3, 1);
+          transform: translateY(8px);
+          transition: opacity 420ms ease, transform 420ms cubic-bezier(0.16, 1, 0.3, 1);
         }
-        .nb-sheet.is-open .nb-mghost,
-        .nb-sheet.is-open .nb-mcta {
+        .nvx-mghost {
+          margin-bottom: 9px;
+          color: rgba(233, 241, 255, 0.95);
+          border: 1px solid rgba(147, 197, 253, 0.3);
+        }
+        .nvx-mcta {
+          color: #ffffff;
+          background: linear-gradient(135deg, #2563eb, #3b82f6);
+          box-shadow: 0 8px 22px rgba(37, 99, 235, 0.34);
+        }
+        .nvx-sheet.is-open .nvx-mghost,
+        .nvx-sheet.is-open .nvx-mcta {
           opacity: 1;
           transform: translateY(0);
         }
-        .nb-mghost {
-          font-weight: 600;
-          color: rgba(233, 241, 255, 0.95);
-          border: 1px solid rgba(147, 197, 253, 0.24);
-          margin-bottom: 10px;
-        }
-        .nb-mcta {
-          font-weight: 700;
-          color: #ffffff;
-          background: linear-gradient(135deg, #2563eb, #3b82f6);
-          box-shadow: 0 10px 24px rgba(37, 99, 235, 0.35);
-        }
 
-        .nb-brand:focus-visible,
-        .nb-link:focus-visible,
-        .nb-ghost:focus-visible,
-        .nb-cta:focus-visible,
-        .nb-burger:focus-visible,
-        .nb-mlink:focus-visible,
-        .nb-mghost:focus-visible,
-        .nb-mcta:focus-visible {
+        .nvx-link:focus-visible,
+        .nvx-ghost:focus-visible,
+        .nvx-cta:focus-visible,
+        .nvx-brand:focus-visible,
+        .nvx-burger:focus-visible,
+        .nvx-mlink:focus-visible,
+        .nvx-mghost:focus-visible,
+        .nvx-mcta:focus-visible {
           outline: 2px solid #93c5fd;
           outline-offset: 3px;
         }
 
-        @media (min-width: 640px) {
-          .nb-tag {
-            display: block;
-          }
-        }
-        @media (min-width: 900px) {
-          .nb-links,
-          .nb-actions {
-            display: flex;
-          }
-          .nb-burger,
-          .nb-sheet {
-            display: none;
-          }
-        }
-        @media (max-width: 480px) {
-          .nb-inner {
-            padding: 0 16px;
-          }
-        }
         @media (prefers-reduced-motion: reduce) {
-          .nb-logo-img,
-          .nb-link-rail,
-          .nb-link-glow,
-          .nb-ghost,
-          .nb-cta,
-          .nb-mlink,
-          .nb-mghost,
-          .nb-mcta,
-          .nb-bar {
+          .nvx,
+          .nvx-logo-img,
+          .nvx-link,
+          .nvx-link-rail,
+          .nvx-ghost,
+          .nvx-cta,
+          .nvx-bar,
+          .nvx-mlink,
+          .nvx-mghost,
+          .nvx-mcta {
             transition-duration: 1ms !important;
           }
-          .nb-cta:hover .nb-cta-sheen {
+          .nvx-cta:hover .nvx-cta-sheen {
             animation: none;
           }
         }
       `}</style>
-    </nav>
+    </>
   );
 }
