@@ -1,12 +1,35 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import InstituteLayout from '../../components/layout/InstituteLayout';
 import Modal from '../../components/ui/Modal';
-import api, { getUser } from '../../lib/api';
+import api, { getUser, notifyError, errorMessage, isCancel, patchCache, revalidate } from '../../lib/api';
 import { T } from '../../components/ds/tokens';
 
 import toast from 'react-hot-toast';
 import { todayIST, fmtDate } from '../../lib/dateUtils';
+
+const STUDENTS_URL = '/api/sheets/students';
+
+/**
+ * Last line of defence for the student count.
+ *
+ * The count and the row numbers must be derived from ONE list, and that list
+ * must contain each student exactly once. A row with no StudentID is not a
+ * student, and the same StudentID can never appear twice - so a duplicated API
+ * response, an overlapping fetch, or a stray sheet row can no longer inflate
+ * the count or push the last row's number past the total.
+ */
+const canonicalStudents = (raw) => {
+  const seen = new Set();
+  const out = [];
+  (Array.isArray(raw) ? raw : []).forEach((s) => {
+    const id = String(s?.StudentID ?? '').trim();
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    out.push(s);
+  });
+  return out;
+};
 
 const EMPTY = {
   studentName: '', phone: '', parentContact: '', email: '',
@@ -41,21 +64,42 @@ export default function StudentsPage() {
   const [search, setSearch] = useState('');
   const router = useRouter();
 
+  // Request lifecycle guards:
+  //   alive   - nothing is written to state, and no toast is raised, after the
+  //             component unmounts (navigating away mid-request used to leave
+  //             the handler running and fire its error toast on the next page).
+  //   reqSeq  - only the NEWEST request may write to state, so a slow earlier
+  //             response can never overwrite fresher data.
+  const alive = useRef(true);
+  const reqSeq = useRef(0);
+
+  useEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
+
+  const fetchStudents = useCallback(async ({ silent = false } = {}) => {
+    const seq = ++reqSeq.current;
+    if (!silent) setLoading(true);
+    try {
+      const res = await api.get(STUDENTS_URL);
+      if (!alive.current || seq !== reqSeq.current) return; // stale / unmounted
+      setStudents(canonicalStudents(res.data?.data));
+    } catch (err) {
+      if (isCancel(err) || !alive.current || seq !== reqSeq.current) return;
+      // ONE toast per failure, however many callers shared the request.
+      notifyError('students-load', errorMessage(err, 'Failed to load students'));
+    } finally {
+      if (alive.current && seq === reqSeq.current && !silent) setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     const user = getUser();
     if (!user || user.role !== 'institute') { router.push('/institute/login'); return; }
     fetchStudents();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const fetchStudents = async () => {
-    setLoading(true);
-    try {
-      const res = await api.get('/api/sheets/students');
-      setStudents(res.data.data || []);
-    } catch { toast.error('Failed to load students'); }
-    finally { setLoading(false); }
-  };
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
@@ -72,20 +116,47 @@ export default function StudentsPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (saving) return;   // a double click can no longer send two writes
     setSaving(true);
     try {
       if (editId) {
-        await api.put(`/api/sheets/students/${editId}`, form);
+        // ONE request. The response carries the saved row, so the edited
+        // student is patched straight into state and the cache - no blocking
+        // refetch of the whole list, and no refetch of the other modules.
+        const res = await api.put(`/api/sheets/students/${editId}`, form);
+        const saved = res.data?.student;
+        const merge = (s) => (String(s.StudentID) !== String(editId) ? s : {
+          ...s,
+          ...(saved || {
+            StudentName: form.studentName, Phone: form.phone,
+            ParentContact: form.parentContact, Email: form.email,
+            Course: form.course, Address: form.address,
+          }),
+        });
+        if (alive.current) setStudents((prev) => prev.map(merge));
+        patchCache(STUDENTS_URL, (cached) => ({
+          ...cached,
+          data: canonicalStudents(cached?.data).map(merge),
+        }));
         toast.success('Student updated');
+        setShowModal(false);
       } else {
         await api.post('/api/sheets/students', form);
         toast.success('Student added');
+        setShowModal(false);
+        // A new row needs its server-assigned StudentID, so read the list once.
+        await fetchStudents({ silent: true });
       }
-      setShowModal(false);
-      fetchStudents();
+
+      // Background revalidation only. The UI already shows the saved state, so
+      // this never blocks the user and never shows a spinner again.
+      revalidate(STUDENTS_URL).then((data) => {
+        if (!alive.current || !data) return;
+        setStudents(canonicalStudents(data.data));
+      });
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Save failed');
-    } finally { setSaving(false); }
+      if (!isCancel(err)) notifyError('student-save', errorMessage(err, 'Save failed'));
+    } finally { if (alive.current) setSaving(false); }
   };
 
   const handleDelete = async (id, name) => {
@@ -93,8 +164,17 @@ export default function StudentsPage() {
     try {
       await api.delete(`/api/sheets/students/${id}`);
       toast.success('Student deleted');
-      fetchStudents();
-    } catch { toast.error('Delete failed'); }
+      // Remove locally instead of refetching everything, then revalidate quietly.
+      const drop = (list) => list.filter((s) => String(s.StudentID) !== String(id));
+      if (alive.current) setStudents((prev) => drop(prev));
+      patchCache(STUDENTS_URL, (cached) => ({ ...cached, data: drop(canonicalStudents(cached?.data)) }));
+      revalidate(STUDENTS_URL).then((data) => {
+        if (!alive.current || !data) return;
+        setStudents(canonicalStudents(data.data));
+      });
+    } catch (err) {
+      if (!isCancel(err)) notifyError('student-delete', errorMessage(err, 'Delete failed'));
+    }
   };
 
   const filtered = students.filter(s => {
@@ -198,7 +278,7 @@ export default function StudentsPage() {
               <table className="sc-table">
                 <thead>
                   <tr>
-                    {['ID', 'Name', 'Phone', 'Parent Contact', 'Course', 'Joining Date', 'Actions'].map(h => (
+                    {['#', 'ID', 'Name', 'Phone', 'Parent Contact', 'Course', 'Joining Date', 'Actions'].map(h => (
                       <th key={h} className={h === 'Actions' ? 'th-act' : undefined}>{h}</th>
                     ))}
                   </tr>
@@ -206,6 +286,7 @@ export default function StudentsPage() {
                 <tbody>
                   {filtered.map((s, i) => (
                     <tr key={s.StudentID} className="row" style={{ animationDelay: `${Math.min(i, 12) * 28}ms` }}>
+                      <td className="serial">{i + 1}</td>
                       <td><span className="idchip">{s.StudentID}</span></td>
                       <td>
                         <div className="who">
@@ -255,7 +336,10 @@ export default function StudentsPage() {
                     <p className="scard-n">{s.StudentName}</p>
                     <span className="sc-badge course">{s.Course}</span>
                   </div>
-                  <span className="idchip">{s.StudentID}</span>
+                  <span className="scard-nums">
+                    <span className="serial-chip">#{i + 1}</span>
+                    <span className="idchip">{s.StudentID}</span>
+                  </span>
                 </div>
 
                 <div className="scard-grid">
@@ -437,6 +521,28 @@ export default function StudentsPage() {
           to   { opacity: 1; transform: translateY(0); }
         }
         .th-act { text-align: right; }
+        /* Display serial: position in the list, 1..n. The ID chip beside it is
+           the permanent StudentID that Fees / Attendance / Batches reference, so
+           the two are shown separately instead of the ID standing in for both. */
+        .serial {
+          width: 34px;
+          font-size: 12px;
+          font-weight: 700;
+          color: #6B7280;
+          font-variant-numeric: tabular-nums;
+        }
+        .scard-nums {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-end;
+          gap: 4px;
+        }
+        .serial-chip {
+          font-size: 10.5px;
+          font-weight: 700;
+          color: #6B7280;
+          font-variant-numeric: tabular-nums;
+        }
         .idchip {
           display: inline-block;
           padding: 3px 8px;

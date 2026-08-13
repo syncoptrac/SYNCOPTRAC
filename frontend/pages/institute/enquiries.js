@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import InstituteLayout from '../../components/layout/InstituteLayout';
 import Modal from '../../components/ui/Modal';
-import api, { getUser } from '../../lib/api';
+import api, { getUser, notifyError, errorMessage } from '../../lib/api';
 import { T } from '../../components/ds/tokens';
 
 const fmtDate = (val) => {
@@ -51,7 +51,7 @@ export default function EnquiriesPage() {
     try {
       const res = await api.get('/api/sheets/enquiries');
       setEnquiries(res.data.data || []);
-    } catch { toast.error('Failed to load enquiries'); }
+    } catch (err) { notifyError('enquiries-load', errorMessage(err, 'Failed to load enquiries')); }
     finally { setLoading(false); }
   };
 

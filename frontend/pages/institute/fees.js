@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import InstituteLayout from '../../components/layout/InstituteLayout';
 import Modal from '../../components/ui/Modal';
-import api, { getUser } from '../../lib/api';
+import api, { getUser, notifyError, errorMessage } from '../../lib/api';
 import toast from 'react-hot-toast';
 import { T } from '../../components/ds/tokens';
 
@@ -70,7 +70,7 @@ export default function FeesPage() {
       setFees(activeFees);
       setStudents(activeStudents);
       if (feesRes.data.feeCollectionCycle) setFeeCycle(feesRes.data.feeCollectionCycle);
-    } catch { toast.error('Failed to load fees'); }
+    } catch (err) { notifyError('fees-load', errorMessage(err, 'Failed to load fees')); }
     finally { setLoading(false); }
   };
 

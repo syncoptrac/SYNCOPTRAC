@@ -91,33 +91,18 @@ export default function InstituteLayout({ children, title }) {
     return () => { alive = false; clearInterval(timer); };
   }, []);
 
-  // PERF: once the current page has finished loading, quietly fetch what the
-  // other tabs will need. Staggered and one-at-a-time on purpose: Google
-  // throttles concurrent executions of a single Apps Script project, so a
-  // parallel burst would make the visible page slower, not faster.
-  useEffect(() => {
-    let cancelled = false;
-
-    const queue = [];
-    Object.keys(WARM).forEach((href) => {
-      if (href === router.pathname) return; // the page is already loading its own data
-      WARM[href].forEach((url) => {
-        if (!queue.includes(url)) queue.push(url);
-      });
-    });
-
-    const run = async () => {
-      for (const url of queue) {
-        if (cancelled) return;
-        warmUrl(url);
-        await new Promise((resolve) => setTimeout(resolve, 500));
-      }
-    };
-
-    // 1.2s delay keeps the warm-up off the critical path of the current page.
-    const start = setTimeout(run, 1200);
-    return () => { cancelled = true; clearTimeout(start); };
-  }, [router.pathname]);
+  // REMOVED - this was a major cause of "everything is slow".
+  // On EVERY navigation this walked all six tabs and fired eight Apps Script
+  // reads one after another. Google serialises concurrent executions of a
+  // single Apps Script project, so those speculative reads queued in front of
+  // the request the user was actually waiting for. Right after a save it was
+  // worse: the write invalidated the cache, this refetched every module, and
+  // the user's own refetch sat behind all of it - which is how a student save
+  // reached the 30s client timeout.
+  //
+  // Targeted prefetching is kept instead: warmFor() still runs on hover and
+  // touch-down (below), so it only fetches what the user is about to open, and
+  // only one tab's worth of data.
 
   return (
     <div className="app-shell sc-app" style={{

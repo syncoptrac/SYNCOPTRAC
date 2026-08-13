@@ -1,5 +1,6 @@
 import axios from 'axios';
 import Cookies from 'js-cookie';
+import toast from 'react-hot-toast';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -175,6 +176,70 @@ export const prefetch = (url) => {
   if (typeof window === 'undefined') return;
   api.get(url).catch(() => {});
 };
+
+// ─── DEDUPED ERROR NOTIFICATIONS ───────────────────────────────────
+// ROOT CAUSE of "Failed to load students" appearing several times over:
+// api.get() coalesces duplicate GETs into ONE shared promise, so when that
+// promise rejects every awaiting caller runs its own catch block - and each of
+// those called toast.error(), stacking an identical toast per caller. Mounting
+// two pages that both read /api/sheets/students multiplied it again.
+//
+// react-hot-toast is already this app's notification system (the <Toaster /> in
+// _app.js). Reusing an existing toast `id` makes it UPDATE that toast instead of
+// pushing a new one, and the short window collapses a burst of failures from the
+// same source into a single message. No second library, no config change.
+const lastNotified = new Map();
+const NOTIFY_WINDOW_MS = 4000;
+
+export function notifyError(key, message) {
+  const id = `sc-err-${key}`;
+  const now = Date.now();
+  if (now - (lastNotified.get(id) || 0) < NOTIFY_WINDOW_MS) return;
+  lastNotified.set(id, now);
+  toast.error(message, { id });
+}
+
+// True when a request was deliberately cancelled (unmount / superseded), which
+// must never surface as an error to the user.
+export const isCancel = (err) =>
+  (axios.isCancel && axios.isCancel(err)) ||
+  err?.code === 'ERR_CANCELED' ||
+  err?.name === 'CanceledError' ||
+  err?.name === 'AbortError';
+
+// Turns an axios failure into one meaningful sentence. The backend now sends a
+// real diagnosis for Apps Script problems, so prefer it over a generic string.
+export function errorMessage(err, fallback) {
+  if (err?.code === 'ECONNABORTED' || /timeout/i.test(err?.message || '')) {
+    return 'The server took too long to respond. Please try again.';
+  }
+  return err?.response?.data?.error || fallback;
+}
+
+// Update a cached GET payload in place after a successful write, so the UI can
+// show the saved state without paying for another Apps Script round trip.
+export function patchCache(url, updater) {
+  const key = String(url);
+  const hit = memCache.get(key);
+  if (!hit || !hit.data) return;
+  try {
+    const next = updater(hit.data);
+    if (next) writeCache(key, next);
+  } catch {
+    // A cache patch is an optimisation - never let it break a save.
+  }
+}
+
+// Background revalidation: one uncached read, result stored for the next paint.
+export async function revalidate(url) {
+  try {
+    const res = await rawGet(url);
+    writeCache(String(url), res.data);
+    return res.data;
+  } catch {
+    return null;
+  }
+}
 
 export default api;
 

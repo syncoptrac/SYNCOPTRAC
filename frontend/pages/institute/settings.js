@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import InstituteLayout from '../../components/layout/InstituteLayout';
-import api, { getUser, setStoredUser } from '../../lib/api';
+import api, { getUser, setStoredUser, notifyError, errorMessage } from '../../lib/api';
 import toast from 'react-hot-toast';
 import { T } from '../../components/ds/tokens';
 
@@ -34,7 +34,7 @@ export default function InstituteSettings() {
       setProfile(res.data);
       if (res.data?.feeCollectionCycle) setFeeCycle(res.data.feeCollectionCycle);
     } catch (e) {
-      toast.error('Failed to load account details');
+      notifyError('profile-load', errorMessage(e, 'Failed to load account details'));
     } finally {
       setLoading(false);
     }

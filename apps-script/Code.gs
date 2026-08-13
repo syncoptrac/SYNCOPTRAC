@@ -120,6 +120,12 @@ function computeGet_(params) {
 }
 
 function doPost(e) {
+  // Writes are serialised. Several of them (row rewrites, identity
+  // propagation) read the sheet, compute, then write it back; two overlapping
+  // saves could otherwise clobber each other's rows. tryLock never fails the
+  // request - if the lock cannot be taken we still proceed, exactly as before.
+  var lock = null;
+  try { lock = LockService.getScriptLock(); lock.tryLock(20000); } catch (lockErr) { lock = null; }
   try {
     const body = JSON.parse(e.postData.contents);
     let result;
@@ -146,7 +152,11 @@ function doPost(e) {
     if (result && !result.error && result.success !== false) bumpDataVersion_();
     return jsonResponse(result);
   } catch (err) {
-    return jsonResponse({ error: err.message });
+    // Always JSON, never an HTML error page - this is the response contract
+    // the backend validates against.
+    return jsonResponse({ success: false, error: String(err && err.message ? err.message : err) });
+  } finally {
+    if (lock) { try { lock.releaseLock(); } catch (relErr) {} }
   }
 }
 
@@ -429,7 +439,22 @@ function sheetToObjects(sheet) {
   var data = sheetData_(sheet);
   if (data.length < 2) return [];
   var headers = data[0];
-  return data.slice(1).map(function(row) {
+  var out = [];
+  for (var r = 1; r < data.length; r++) {
+    var row = data[r];
+
+    // ROOT-CAUSE FIX (student count): getDataRange() extends to the last row
+    // that has EVER held content, so a row whose cells were cleared instead of
+    // deleted still sits inside the range. Those rows used to be returned as
+    // real objects, silently inflating every count and list in the app.
+    // A row with no values at all is not a record.
+    var blank = true;
+    for (var c = 0; c < headers.length; c++) {
+      var cell = row[c];
+      if (cell !== '' && cell !== null && cell !== undefined) { blank = false; break; }
+    }
+    if (blank) continue;
+
     var obj = {};
     headers.forEach(function(h, i) {
       var val = row[i];
@@ -439,8 +464,9 @@ function sheetToObjects(sheet) {
       }
       obj[h] = val;
     });
-    return obj;
-  });
+    out.push(obj);
+  }
+  return out;
 }
 
 function findRowByField(sheet, fieldName, value) {
@@ -456,7 +482,45 @@ function findRowByField(sheet, fieldName, value) {
 
 // ─── STUDENTS ─────────────────────────────────────────────────
 function getStudents() {
-  return { success: true, data: sheetToObjects(getSheet(SHEETS.STUDENTS)) };
+  return { success: true, data: canonicalStudents_() };
+}
+
+/**
+ * THE single source of truth for "who the students are".
+ *
+ * Guarantees, so the count can never disagree with the rows again:
+ *   - a row without a StudentID is not a student (stray/partial sheet row)
+ *   - the same StudentID is never returned twice
+ *   - order follows the sheet, so the display serial is stable
+ *
+ * Nothing is deleted or rewritten here: this is a read-side filter only.
+ */
+function canonicalStudents_() {
+  var rows = sheetToObjects(getSheet(SHEETS.STUDENTS));
+  var seen = {};
+  var out = [];
+  for (var i = 0; i < rows.length; i++) {
+    var sid = rows[i].StudentID;
+    sid = String(sid === null || sid === undefined ? '' : sid).trim();
+    if (!sid) continue;
+    if (seen[sid]) continue;
+    seen[sid] = true;
+    out.push(rows[i]);
+  }
+  return out;
+}
+
+/** StudentID -> current identity. Students sheet always wins. */
+function studentIdentityMap_() {
+  var map = {};
+  var list = canonicalStudents_();
+  for (var i = 0; i < list.length; i++) {
+    map[String(list[i].StudentID)] = {
+      name: list[i].StudentName,
+      course: list[i].Course
+    };
+  }
+  return map;
 }
 
 function addStudent(body) {
@@ -487,7 +551,95 @@ function updateStudent(body) {
   };
   // PERF: one write for the whole row instead of one per column.
   writeRowUpdates_(sheet, rowIndex, updates);
-  return { success: true, message: 'Student updated' };
+
+  // ROOT-CAUSE FIX (Students -> Fees desync): the Students sheet is the source
+  // of truth for identity, but Fees and Attendance each keep a DENORMALISED
+  // copy of StudentName (Fees also copies Course) so their rows read on their
+  // own. addStudent() wrote those copies; updateStudent() never refreshed them,
+  // so renaming Mira -> Mira Sharma left "Mira" in Fees forever.
+  // Only the identity columns are rewritten. No amount, due date, payment
+  // date, status, period, cycle or attendance status is touched, so payment
+  // history and fee-cycle logic are preserved exactly.
+  const synced = propagateStudentIdentity_(body.studentId, body.studentName, body.course);
+
+  return {
+    success: true,
+    message: 'Student updated',
+    student: currentStudent_(body.studentId),
+    synced: synced
+  };
+}
+
+/** The saved row, read back so the client can update state without a refetch. */
+function currentStudent_(studentId) {
+  var list = canonicalStudents_();
+  for (var i = 0; i < list.length; i++) {
+    if (String(list[i].StudentID) === String(studentId)) return list[i];
+  }
+  return null;
+}
+
+function propagateStudentIdentity_(studentId, studentName, course) {
+  var result = { fees: 0, attendance: 0 };
+  try {
+    result.fees = updateIdentityColumns_(getSheet(SHEETS.FEES), studentId, {
+      StudentName: studentName,
+      Course: course
+    });
+  } catch (err) { result.feesError = String(err && err.message ? err.message : err); }
+  try {
+    result.attendance = updateIdentityColumns_(getSheet(SHEETS.ATTENDANCE), studentId, {
+      StudentName: studentName
+    });
+  } catch (err) { result.attendanceError = String(err && err.message ? err.message : err); }
+  return result;
+}
+
+/**
+ * Rewrites ONLY the named identity columns, and only for rows belonging to
+ * studentId. One setValues() per column (never a full-sheet rewrite), and it
+ * bails out entirely when nothing actually differs - so a save that does not
+ * change the name costs zero extra writes.
+ */
+function updateIdentityColumns_(sheet, studentId, values) {
+  var data = sheetData_(sheet);
+  if (data.length < 2) return 0;
+  var headers = data[0];
+  var sidCol = headers.indexOf('StudentID');
+  if (sidCol === -1) return 0;
+
+  var sid = String(studentId);
+  var rowsChanged = 0;
+  var wrote = false;
+
+  Object.keys(values).forEach(function (colName) {
+    var value = values[colName];
+    if (value === undefined || value === null || value === '') return; // nothing to copy
+    var col = headers.indexOf(colName);
+    if (col === -1) return;
+
+    var column = [];
+    var changed = false;
+    for (var i = 1; i < data.length; i++) {
+      var current = data[i][col];
+      if (String(data[i][sidCol]) === sid && String(current) !== String(value)) {
+        column.push([value]);
+        changed = true;
+        rowsChanged++;
+      } else {
+        column.push([current]);
+      }
+    }
+    if (!changed) return;
+    sheet.getRange(2, col + 1, column.length, 1).setValues(column);
+    wrote = true;
+  });
+
+  if (wrote) {
+    invalidateSheetData_(sheet);
+    bumpDataVersion_();
+  }
+  return rowsChanged;
 }
 
 function deleteStudent(studentId) {
@@ -525,6 +677,15 @@ function getAttendance(date, studentId) {
     data = data.filter(r => toISO(r.Date) === isoDate);
   }
   if (studentId) data = data.filter(r => String(r.StudentID) === String(studentId));
+
+  // Display the student's CURRENT name against a historical record. The stored
+  // Date and Status - the actual attendance history - are never modified.
+  const identity = studentIdentityMap_();
+  data = data.map(r => {
+    const who = identity[String(r.StudentID)];
+    return who && who.name ? Object.assign({}, r, { StudentName: who.name }) : r;
+  });
+
   return { success: true, data };
 }
 
@@ -572,7 +733,23 @@ function markAttendance(body) {
 function computeEffectiveFeeRows(cycle) {
   const months = cycleMonths(cycle);
   const today = todayISO();
-  const raw = sheetToObjects(getSheet(SHEETS.FEES));
+  const rawRows = sheetToObjects(getSheet(SHEETS.FEES));
+
+  // Identity is resolved from the Students sheet on every read, so the Fees
+  // page shows the CURRENT name even for rows written before the rename (and
+  // even if a propagation write ever fails). Money, dates, status and cycle
+  // still come only from the fee row itself.
+  const identity = studentIdentityMap_();
+
+  // Guard against a duplicate / ID-less fee row producing a phantom entry.
+  const seenFee = {};
+  const raw = rawRows.filter(f => {
+    const sid = String(f.StudentID === null || f.StudentID === undefined ? '' : f.StudentID).trim();
+    if (!sid) return false;
+    if (seenFee[sid]) return false;
+    seenFee[sid] = true;
+    return true;
+  });
 
   return raw.map(f => {
     const totalFee = parseFloat(f.TotalFee) || 0;
@@ -598,7 +775,11 @@ function computeEffectiveFeeRows(cycle) {
     // columns existed — display-only, never persisted by a read.
     const cycleStart = f.CycleStart || (dueDate ? addMonthsISO(dueDate, -months) : '');
 
+    const who = identity[String(f.StudentID)] || {};
+
     return Object.assign({}, f, {
+      StudentName: who.name || f.StudentName,
+      Course: who.course || f.Course,
       PaidAmount: effectivePaid,
       PendingAmount: effectivePending,
       Status: status,
@@ -754,7 +935,9 @@ function sendEmail(body) {
 
 // ─── DASHBOARD SUMMARY ────────────────────────────────────────
 function getDashboardSummary(cycle) {
-  const students   = sheetToObjects(getSheet(SHEETS.STUDENTS));
+  // Same canonical list the Students page renders, so the dashboard total
+  // and the Students page can never disagree.
+  const students   = canonicalStudents_();
   // Same dynamic Status/PaidAmount/PendingAmount as the Fees page — a
   // student who rolled into an unpaid new cycle is counted as unpaid here
   // too, without needing a separate write to "reset" the sheet.

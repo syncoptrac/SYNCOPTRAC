@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import InstituteLayout from '../../components/layout/InstituteLayout';
-import api, { getUser, prefetch } from '../../lib/api';
+import api, { getUser, prefetch, notifyError, errorMessage } from '../../lib/api';
 import toast from 'react-hot-toast';
 import { T } from '../../components/ds/tokens';
 
@@ -62,8 +62,7 @@ export default function AttendancePage() {
       // Default: neutral \u2014 no status set, staff must explicitly mark each student
       setAttendance({});
     } catch (err) {
-      const msg = err.response?.data?.error || err.message || 'Failed to load students';
-      toast.error(msg);
+      notifyError('students-load', errorMessage(err, 'Failed to load students'));
     }
     finally { setLoading(false); }
   };

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import InstituteLayout from '../../components/layout/InstituteLayout';
 import Modal from '../../components/ui/Modal';
-import api, { getUser } from '../../lib/api';
+import api, { getUser, notifyError, errorMessage } from '../../lib/api';
 import toast from 'react-hot-toast';
 import { T } from '../../components/ds/tokens';
 
@@ -87,21 +87,21 @@ export default function BatchesPage() {
     if (bRes.status === 'fulfilled') {
       setBatches(bRes.value.data.data || []);
     } else {
-      toast.error('Failed to load batches');
+      notifyError('batches-load', errorMessage(bRes.reason, 'Failed to load batches'));
       console.error('Batches error:', bRes.reason);
     }
 
     if (sRes.status === 'fulfilled') {
       setStudents(sRes.value.data.data || []);
     } else {
-      toast.error('Failed to load students');
+      notifyError('students-load', errorMessage(sRes.reason, 'Failed to load students'));
       console.error('Students error:', sRes.reason);
     }
 
     if (slRes.status === 'fulfilled') {
       setSlots(slRes.value.data.data || []);
     } else {
-      toast.error('Failed to load schedule');
+      notifyError('schedule-load', errorMessage(slRes.reason, 'Failed to load schedule'));
       console.error('Schedule error:', slRes.reason);
     }
 

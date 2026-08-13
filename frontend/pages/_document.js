@@ -18,14 +18,28 @@ body{margin:0;background:#0B1F4D;color:#F8FAFC;font-family:-apple-system,BlinkMa
 #__next{min-height:100vh;background:#0B1F4D;opacity:1;transition:opacity 240ms cubic-bezier(0.16,1,0.3,1)}
 html.sc-boot{background:#0B1F4D}
 html.sc-boot #__next{opacity:0}
+/* ROOT-CAUSE FIX for the remaining flash. The critical CSS above paints the
+   marketing navy, but /institute/* and /admin/* render on the light app canvas
+   (#F8FAFC, exactly the value already used by InstituteLayout and the bg token).
+   So those routes painted navy first and were then repainted light the moment
+   globals.css applied - the visible "flash" was that repaint, not missing CSS.
+   The boot script below picks the correct canvas from the URL BEFORE first
+   paint, so the first pixels are already the right colour.
+   No new colours, no layout change: the same two values the app already uses. */
+html.sc-canvas-app,html.sc-canvas-app body{background:#F8FAFC;color:#111827}
+html.sc-canvas-app #__next{background:#F8FAFC}
+html.sc-boot.sc-canvas-app{background:#F8FAFC}
 @media (prefers-reduced-motion: reduce){#__next{transition:none}}
 `;
 
 const BOOT_SCRIPT = `(function(){try{var d=document,h=d.documentElement,done=0,t=0,iv;
-h.className=(h.className?h.className+' ':'')+'sc-boot';
+var p=(d.location&&d.location.pathname)||'';
+var app=/^\/(institute|admin)(\/|$)/.test(p)&&!/\/login\/?$/.test(p);
+h.className=(h.className?h.className+' ':'')+'sc-boot'+(app?' sc-canvas-app':'');
 function show(){if(done)return;done=1;if(iv)clearInterval(iv);
-h.className=h.className.replace(/(^|\\s)sc-boot(\\s|$)/g,' ').replace(/\\s+/g,' ').replace(/^\\s|\\s$/g,'');}
-function ready(){var l=d.querySelectorAll('link[rel="stylesheet"]');if(!l.length)return d.readyState!=='loading';
+h.className=h.className.replace(/(^|\s)sc-boot(\s|$)/g,' ').replace(/\s+/g,' ').replace(/^\s|\s$/g,'');}
+function ready(){var l=d.querySelectorAll('link[rel="stylesheet"]');
+if(!l.length)return d.readyState==='complete';
 for(var i=0;i<l.length;i++){var s=null;try{s=l[i].sheet}catch(e){s=1}if(!s)return false}return true}
 iv=setInterval(function(){t+=25;if(ready()||t>=1200)show()},25);
 d.addEventListener('DOMContentLoaded',function(){if(ready())show()});
@@ -35,7 +49,11 @@ setTimeout(show,2000);}catch(e){}})();`;
 export default function Document(props) {
   // Nonce is injected by middleware via X-Nonce response header,
   // then passed through Next.js context so scripts/styles get approved by CSP.
-  const nonce = props.__NEXT_DATA__?.props?.nonce;
+  // getInitialProps below returns the nonce as a top-level prop, so it is read
+  // from props directly. It used to be read from props.__NEXT_DATA__.props,
+  // where it never existed - so nonce was always undefined and every
+  // nonce={...} attribute silently did nothing.
+  const nonce = props.nonce || undefined;
 
   return (
     <Html lang="en">
