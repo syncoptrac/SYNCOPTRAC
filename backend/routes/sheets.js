@@ -357,34 +357,15 @@ function breakerRecord(key, code, ok) {
 //   • requests that did run had their one-shot content key go
 //     stale before we could fetch the body                   -> 404 on the
 //                                                               content host
-// Sending them one at a time per endpoint removes both. It is not slower in
+// SUPERSEDED in round 6. Queueing was the wrong cure - see getBundle below.
+// Old note kept for context: it was not thought to be slower in
 // practice: repeat reads are answered by CacheService in ~10ms, and the backend
 // cache means a warm page makes no upstream call at all.
-// One lane per endpoint. Writes are queued AHEAD of reads: a read can always
-// fall back on cached / last-known-good data, but a save or a delete that never
-// reaches Google is a silent loss of the user's action.
-const lanes = new Map();            // endpoint -> { busy, waiters: [] }
-
-function serialise(key, task, priority = false) {
-  let lane = lanes.get(key);
-  if (!lane) { lane = { busy: false, waiters: [] }; lanes.set(key, lane); }
-  return new Promise((resolve, reject) => {
-    const job = { task, resolve, reject };
-    if (priority) lane.waiters.unshift(job); else lane.waiters.push(job);
-    pump(lane);
-  });
-}
-
-function pump(lane) {
-  if (lane.busy) return;
-  const job = lane.waiters.shift();
-  if (!job) return;
-  lane.busy = true;
-  Promise.resolve()
-    .then(job.task)
-    .then(job.resolve, job.reject)
-    .finally(() => { lane.busy = false; pump(lane); });
-}
+// The per-endpoint queue that used to live here has been REMOVED.
+// It converted "six parallel reads" into "one slow read plus five dropped
+// before they were ever sent" - the six httpStatus=0 TIMEOUT lines in the
+// Render log, and the 20s dashboard. Requests are issued directly again; the
+// pile-up is cured by asking for everything in ONE call (see fetchBundle).
 
 async function proxyToAppsScript(rawUrl, method = 'GET', body = null) {
   const base = normaliseAppsScriptUrl(rawUrl);
@@ -427,17 +408,8 @@ async function proxyToAppsScript(rawUrl, method = 'GET', body = null) {
     // count against the deadline, otherwise a queue of seven could run far past
     // the frontend's own timeout. If our turn arrives too late we skip the call
     // entirely so cachedGet can serve last-known-good data instead.
-    last = await serialise(base, () => {
-      const left = deadline - Date.now();
-      // Reads may be abandoned before sending - cachedGet still has last-known
-      // -good data to serve, and `notSent` proves nothing reached the sheet.
-      if (!isWrite && left < 1500) {
-        return { ok: false, code: 'TIMEOUT', status: 0, contentType: '', finalUrl: url, notSent: true };
-      }
-      // A write always gets a real attempt window, measured from the moment its
-      // turn actually begins rather than from when it joined the queue.
-      return attemptAppsScript(url, method, body, isWrite ? Math.max(12000, left) : left);
-    }, isWrite);
+    // Sent immediately, never parked behind another request.
+    last = await attemptAppsScript(url, method, body, isWrite ? Math.max(12000, budget) : budget);
     if (last.ok) { breakerRecord(base, null, true); return last.data; }
     if (!RETRYABLE.has(last.code)) break;
     // A write is NOT replayed — Apps Script may already have committed the row,
@@ -486,6 +458,54 @@ function respond(res, data, extra) {
 }
 
 // ─── CACHED GET HELPER ───────────────────────────────────────────────────────
+// ─── ONE UPSTREAM CALL SERVES EVERY PAGE ─────────────────────────────
+// ROOT CAUSE of "the dashboard takes 20 seconds".
+// A cold load asked Apps Script for students, attendance, fees, enquiries,
+// batches, schedule and the dashboard SEPARATELY. Google runs one execution per
+// script project at a time, so those seven calls could only ever run one after
+// another. getBundle returns all seven from a single execution, and the result
+// is fanned out into the individual cache keys - so the other six routes are
+// answered from memory with no upstream call at all.
+const bundleInFlight = new Map();
+const bundleUnsupported = new Set();   // bases whose deployed script predates getBundle
+
+async function fetchBundle(id, base, cycle) {
+  const key = `${id}:__bundle:${cycle}`;
+  const pending = bundleInFlight.get(key);
+  if (pending) return pending;
+
+  const promise = (async () => {
+    const res = await proxyToAppsScript(`${base}?action=getBundle&cycle=${encodeURIComponent(cycle)}`);
+    if (!isUsable(res)) {
+      // An older deployment replies 'Unknown action'. Remember that and stop
+      // asking, so we never pay for a wasted round trip more than once.
+      if (res && /unknown action/i.test(String(res.error || ''))) bundleUnsupported.add(base);
+      return res;
+    }
+    if (!res.data) { bundleUnsupported.add(base); return res; }
+
+    const d = res.data;
+    const fan = [
+      [d.students,   `${id}:students`],
+      [d.attendance, `${id}:attendance:all`],
+      [d.fees,       `${id}:fees:${cycle}`],
+      [d.enquiries,  `${id}:enquiries`],
+      [d.batches,    `${id}:batches`],
+      [d.schedule,   `${id}:schedule`],
+      [d.dashboard,  `${id}:dashboard:${cycle}`],
+    ];
+    let filled = 0;
+    for (const [payload, cacheKey] of fan) {
+      if (isUsable(payload)) { setCached(cacheKey, payload, base); filled += 1; }
+    }
+    if (!filled) bundleUnsupported.add(base);
+    return res;
+  })().finally(() => bundleInFlight.delete(key));
+
+  bundleInFlight.set(key, promise);
+  return promise;
+}
+
 async function cachedGet(cacheKey, url) {
   const entry = cacheEntry(cacheKey);
 
@@ -500,6 +520,22 @@ async function cachedGet(cacheKey, url) {
   }
 
   // Cold miss (or invalidated by a save): the only path that waits.
+  // Fill EVERY key from one bundled execution first, so the other pages are
+  // already in memory by the time they ask. The fee cycle is resolved the same
+  // way the /fees and /dashboard-summary routes resolve it, so the keys written
+  // here are exactly the keys those routes look up.
+  const bundleBase = normaliseAppsScriptUrl(url);
+  if (!bundleUnsupported.has(bundleBase) && !String(cacheKey).includes(':__bundle:')) {
+    try {
+      const id = String(cacheKey).split(':')[0];
+      await fetchBundle(id, bundleBase, await getFeeCycle(id));
+      const filled = cacheEntry(cacheKey);
+      if (filled && filled.state === 'fresh') return filled.data;
+    } catch {
+      // Fall through to this key's own single-action call below.
+    }
+  }
+
   const data = await fetchUpstream(cacheKey, url);
   if (isUsable(data)) {
     setCached(cacheKey, data, url);

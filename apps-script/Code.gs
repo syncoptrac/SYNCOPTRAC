@@ -117,6 +117,7 @@ function computeGet_(params) {
     let result;
     switch (params.action) {
       case 'getStudents':         result = getStudents(); break;
+      case 'getBundle':           result = getBundle(params.cycle, params.date); break;
       case 'getAttendance':       result = getAttendance(params.date, params.studentId); break;
       case 'getFees':             result = getFees(params.cycle); break;
       case 'getEnquiries':        result = getEnquiries(); break;
@@ -958,6 +959,28 @@ function sendEmail(body) {
 }
 
 // ─── DASHBOARD SUMMARY ────────────────────────────────────────
+// ─── ONE EXECUTION FOR THE WHOLE APP ────────────────────────────────
+// Opening the app used to mean SEVEN separate Web App calls. Google runs only
+// one execution per script project at a time, so they ran back to back and the
+// last page waited for every earlier one to finish.
+// Bundling them is nearly free: sheetData_ memoises each sheet for the life of
+// one execution, so all seven datasets share the SAME reads. One call now costs
+// about what a single call used to.
+function getBundle(cycle, date) {
+  return {
+    success: true,
+    data: {
+      students:   getStudents(),
+      attendance: getAttendance(date, null),
+      fees:       getFees(cycle),
+      enquiries:  getEnquiries(),
+      batches:    getBatches(),
+      schedule:   getSchedule(),
+      dashboard:  getDashboardSummary(cycle)
+    }
+  };
+}
+
 function getDashboardSummary(cycle) {
   // Same canonical list the Students page renders, so the dashboard total
   // and the Students page can never disagree.
