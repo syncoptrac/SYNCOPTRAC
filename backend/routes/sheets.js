@@ -53,6 +53,7 @@ const cache = new Map();
 const CACHE_TTL = 60 * 1000;        // fresh window
 const STALE_TTL = 10 * 60 * 1000;   // servable-while-revalidating window
 const inFlight = new Map();         // request coalescing
+const lastGood = new Map();          // key -> { data, ts } last successful payload
 
 const isUsable = (data) => !!data && !data.error && data.success !== false;
 
@@ -74,12 +75,16 @@ function getCached(key) {
 
 function setCached(key, data, url) {
   const prev = cache.get(key);
+  const ts = Date.now();
   cache.set(key, {
     data,
-    ts: Date.now(),
+    ts,
     url: url || (prev && prev.url) || null,
     mustRevalidate: false,
   });
+  // Survives TTL eviction on purpose: it is the fallback that stops a dead
+  // deployment from rendering the whole app as zeros.
+  lastGood.set(key, { data, ts });
 }
 
 // PERF: two identical requests arriving together (e.g. the Fees page asking
@@ -93,13 +98,15 @@ async function fetchUpstream(key, url) {
   return promise;
 }
 
-// A write flags this institute's cached reads for revalidation.
-// It used to ALSO re-fetch every flagged key immediately (warmKeys), which is a
-// large part of why saving a student was slow: one save kicked off sequential
-// re-reads of students + attendance + fees + dashboard + enquiries + batches +
-// schedule, and Google serialises concurrent executions of a single Apps Script
-// project, so the user's own next request queued behind all of them. The client
-// now revalidates just the list it is showing, in the background.
+// ROOT CAUSE of "saving a student takes 30 seconds".
+// This used to flag every cached key for the institute AND immediately re-warm
+// all of them through warmKeys() — six or more Apps Script calls, run one after
+// another. Google serialises concurrent executions of a single Apps Script
+// project, so that background storm sat directly in front of the very request
+// the user was waiting for (the refetch after Save), and every one of those
+// calls hit the same broken deployment and logged the same HTML error.
+// Now a write only INVALIDATES. The next read of a given key repopulates it —
+// exactly one upstream call, only for data somebody actually asked for.
 function bustCache(instituteId) {
   const prefix = String(instituteId);
   for (const [key, entry] of cache.entries()) {
@@ -124,259 +131,289 @@ function warmKeys(entries) {
   })();
 }
 
-// \u2500\u2500\u2500 PROXY TO APPS SCRIPT \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-// WHY THE RENDER LOG WAS FULL OF "Apps Script non-JSON response: <!DOCTYPE html>":
-//
-// Google never returns an HTML page from a healthy /exec Web App - it returns
-// JSON from ContentService. An HTML body means the request never reached
-// doGet/doPost, and there are only a handful of causes, all of which produce a
-// full HTML document:
-//   * the deployment's "Who has access" is not "Anyone", so Google answers with
-//     the accounts.google.com sign-in page,
-//   * the saved URL is a /dev URL (editor-bound, requires the owner's session),
-//     an /edit link, or a stale deployment id that no longer resolves,
-//   * the 302 to script.googleusercontent.com was not followed to completion,
-//     so the interstitial HTML was read as the body,
-//   * the script hit a quota/permission error and Google served an error page.
-//
-// The old code could not tell these apart: it ignored response.status, ignored
-// Content-Type, followed only ONE redirect, then dumped 500 characters of HTML
-// into the log and returned that HTML *as the error message* - once per
-// request, which is why the same error repeated endlessly.
-//
-// This version validates the response properly (status -> Content-Type -> JSON
-// parseability), identifies WHICH of the causes above happened, logs one
-// actionable line per cause per minute with the deployment id masked, and never
-// treats HTML as data. The JSON contract itself is unchanged.
+// ─── APPS SCRIPT ENDPOINT CONTRACT ──────────────────────────────────────
+// ROOT CAUSE of the repeated Render log line
+//   "Apps Script non-JSON response: <!DOCTYPE html>..."
+// A deployed Apps Script Web App endpoint is ALWAYS exactly:
+//   https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec
+// Anything else makes Google serve an HTML page rather than the script:
+//   .../dev            → editor-bound URL, requires a Google login → HTML sign-in page
+//   .../macros/d/...   → the project URL, not a deployment      → HTML editor page
+//   trailing slash     → 404                                     → HTML error page
+//   access ≠ "Anyone"  → consent/sign-in wall                    → HTML login page
+//   archived/deleted deployment → "unable to open the file"       → HTML error page
+// The old code parsed the body, failed, logged the raw HTML and returned it to
+// the browser as an "error" string. Nothing validated the HTTP status or the
+// Content-Type, nothing timed the request out, and the failure was never
+// classified — so the same request was retried forever and the log filled up.
 const APPS_SCRIPT_EXEC = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
-const UPSTREAM_TIMEOUT_MS = 20000;      // per attempt; below the client's 30s
-const UPSTREAM_TOTAL_BUDGET_MS = 26000; // all attempts, so we always answer
+
+// Hard ceiling for one upstream attempt. Deliberately BELOW the browser's
+// 30s axios timeout, so a stuck Apps Script call surfaces as a clean 502 from
+// our own API instead of the client-side "timeout of 30000ms exceeded".
+// This is not "raising a timeout" — previously there was NO timeout at all,
+// so a hanging Google request held the socket until the client gave up.
+const UPSTREAM_TIMEOUT_MS = 20000;
+const UPSTREAM_TOTAL_BUDGET_MS = 26000;
 const MAX_REDIRECTS = 5;
 
-function normaliseAppsScriptUrl(rawUrl) {
-  return String(rawUrl || '').trim().replace(/[?#].*$/, '').replace(/\/+$/, '');
+function normaliseAppsScriptUrl(raw) {
+  let url = String(raw || '').trim().replace(/\s+/g, '');
+  url = url.replace(/[?#].*$/, '');   // a query string stored on the URL breaks ?action=
+  url = url.replace(/\/+$/, '');      // trailing slash → 404 HTML
+  return url;
 }
 
-// Classifies the configured URL WITHOUT calling it, so a misconfigured
-// deployment fails instantly with a clear reason instead of burning 20s.
 function classifyAppsScriptUrl(url) {
   if (!url) return 'MISSING_URL';
   if (APPS_SCRIPT_EXEC.test(url)) return 'OK';
   if (/\/dev$/.test(url)) return 'DEV_URL';
-  if (/script\.google\.com\/.*\/edit/.test(url) || /\/macros\/d\//.test(url)) return 'EDITOR_URL';
-  if (!/^https:\/\/script\.google\.com\/macros\/s\//.test(url)) return 'NOT_APPS_SCRIPT';
+  if (/script\.google\.com\/macros\/d\//.test(url) || /\/edit$/.test(url)) return 'EDITOR_URL';
+  if (!/^https:\/\/script\.google\.com\//.test(url)) return 'NOT_APPS_SCRIPT';
   return 'NOT_EXEC';
 }
 
-// Logs are safe to share: the deployment id is a credential-like secret, so
-// only its last 4 characters are ever printed.
+// Never log or return the full deployment id — it is a capability URL.
 function safeUrlLabel(url) {
-  const m = String(url || '').match(/\/macros\/s\/([A-Za-z0-9_-]+)\/(exec|dev)/);
-  if (m) return `script.google.com/macros/s/\u2026${m[1].slice(-4)}/${m[2]}`;
-  if (!url) return '(not set)';
-  try { return new URL(url).host; } catch { return '(unparseable url)'; }
+  const m = String(url || '').match(/^https:\/\/script\.google\.com\/macros\/s\/([A-Za-z0-9_-]+)\/(\w+)$/);
+  if (m) return `script.google.com/macros/s/…${m[1].slice(-4)}/${m[2]}`;
+  try {
+    return new URL(String(url)).host + '/…';
+  } catch {
+    return '<invalid url>';
+  }
 }
 
-// Identifies the specific Google HTML page that came back.
+// Turn an HTML body into a precise, actionable, secret-free diagnosis.
 function classifyHtmlBody(body, status) {
-  const b = String(body || '').slice(0, 4000);
-  if (/accounts\.google\.com|ServiceLogin|signin\/identifier|Sign in - Google/i.test(b)) return 'GOOGLE_LOGIN_PAGE';
-  if (/Authorization is required to perform that action/i.test(b)) return 'AUTHORIZATION_REQUIRED';
-  if (/You need permission|request access|Request access/i.test(b)) return 'NO_PERMISSION';
-  if (/Moved Temporarily|temporarily moved|<TITLE>Moved/i.test(b)) return 'UNFOLLOWED_REDIRECT';
-  if (/exceeded (its )?(maximum )?(execution time|quota)|Service invoked too many times/i.test(b)) return 'QUOTA_EXCEEDED';
-  if (/Script function not found|not found: doGet|not found: doPost/i.test(b)) return 'MISSING_HANDLER';
-  if (/is not (currently )?available|Sorry, unable to open the file|deployment.*not found/i.test(b)) return 'DEPLOYMENT_UNAVAILABLE';
-  if (/Google Apps Script|Exception:|TypeError:|ReferenceError:/i.test(b)) return 'SCRIPT_ERROR_PAGE';
+  const s = String(body || '').slice(0, 4000);
+  const l = s.toLowerCase();
+  if (/accounts\.google\.com|servicelogin|signin\/v\d/i.test(s) || /sign in\s*[-–]\s*google accounts/i.test(l)) return 'GOOGLE_LOGIN_PAGE';
+  if (/authoriz|authoris/i.test(l) && /required/i.test(l)) return 'AUTHORIZATION_REQUIRED';
+  if (/you need permission|request access|do(?:n.t| not) have access/i.test(l)) return 'NO_PERMISSION';
+  if (/moved temporarily|the document has moved/i.test(l)) return 'UNFOLLOWED_REDIRECT';
+  if (/service invoked too many times|too many times for one day|exceeded.{0,20}quota|rate limit/i.test(l)) return 'QUOTA_EXCEEDED';
+  if (/unable to open the file|file at this time/i.test(l)) return 'DEPLOYMENT_UNAVAILABLE';
+  if (/script function not found/i.test(l)) return 'MISSING_HANDLER';
+  if (/server error occurred|exception:|scripterror/i.test(l)) return 'SCRIPT_ERROR_PAGE';
   if (status === 404) return 'NOT_FOUND';
   return 'UNEXPECTED_HTML';
 }
 
 const DIAGNOSIS = {
-  MISSING_URL: 'No Apps Script URL is saved for this institute. Set it in Admin \u2192 Institutes.',
-  DEV_URL: 'The saved URL ends in /dev. A /dev URL only works inside the editor with the owner signed in and always returns HTML to a server. Deploy \u2192 New deployment \u2192 Web app and save the /exec URL.',
-  EDITOR_URL: 'The saved URL is an editor link, not a Web App endpoint. Use Deploy \u2192 New deployment \u2192 Web app and copy the /exec URL.',
-  NOT_APPS_SCRIPT: 'The saved URL is not a script.google.com Web App URL.',
-  NOT_EXEC: 'The saved URL is not a deployed Web App endpoint. It must end in /exec.',
-  GOOGLE_LOGIN_PAGE: 'Google returned its sign-in page, so the deployment is not public. Re-deploy with "Who has access: Anyone" (Execute as: Me).',
-  AUTHORIZATION_REQUIRED: 'The deployment requires authorization. Open the script once, run any function to accept the permission prompt, then re-deploy with Execute as: Me.',
-  NO_PERMISSION: 'The deployment is access-restricted. Re-deploy with "Who has access: Anyone".',
-  NOT_FOUND: 'Google could not find this deployment (404). The deployment id is stale - create a New deployment and save its /exec URL.',
-  DEPLOYMENT_UNAVAILABLE: 'The deployment is not currently available. Confirm it is still active, or create a New deployment.',
-  MISSING_HANDLER: 'The deployed version has no doGet/doPost. Re-deploy the current code as a New deployment.',
-  SCRIPT_ERROR_PAGE: 'The script threw before it could return JSON. Check the Apps Script execution log.',
-  UNFOLLOWED_REDIRECT: 'The redirect chain to script.googleusercontent.com did not complete.',
-  QUOTA_EXCEEDED: 'Apps Script quota or execution-time limit was hit. It should recover on its own.',
-  UNEXPECTED_HTML: 'Apps Script returned an HTML page instead of JSON. Confirm the deployment is active and public.',
-  NON_JSON: 'Apps Script returned a non-JSON body. Every handler must return ContentService JSON.',
-  BAD_STATUS: 'Apps Script returned an unexpected HTTP status.',
-  TIMEOUT: 'Apps Script did not respond in time. A long-running script or Google-side contention.',
-  NETWORK: 'The request to Apps Script failed at the network level.',
+  MISSING_URL:            'This institute has no Apps Script Web App URL saved. Add it in Admin → Institutes.',
+  DEV_URL:                'The saved Apps Script URL ends in /dev. That is the editor-only URL and it always returns a Google sign-in page. Use the /exec URL from Deploy → Manage deployments.',
+  EDITOR_URL:             'The saved URL points at the Apps Script project, not a deployment. Use Deploy → New deployment → Web app and copy the /exec URL.',
+  NOT_APPS_SCRIPT:        'The saved Apps Script URL is not a script.google.com address.',
+  NOT_EXEC:               'The saved Apps Script URL is not a Web App /exec endpoint.',
+  GOOGLE_LOGIN_PAGE:      'Google served a sign-in page. Re-deploy the Web App with Execute as: Me and Who has access: Anyone.',
+  AUTHORIZATION_REQUIRED: 'The Apps Script deployment has not been authorised. Open the script, run any function once and accept the Sheets + Gmail permissions, then re-deploy.',
+  NO_PERMISSION:          'The Apps Script deployment is not shared publicly. Re-deploy with Who has access: Anyone.',
+  UNFOLLOWED_REDIRECT:    'Google returned a redirect that could not be followed to a JSON result.',
+  QUOTA_EXCEEDED:         'Google Apps Script quota or rate limit hit. The request was not processed; it will succeed again once the quota window resets.',
+  DEPLOYMENT_UNAVAILABLE: 'The Apps Script deployment is archived, deleted or temporarily unavailable. Create a new deployment and update the saved URL.',
+  MISSING_HANDLER:        'The deployed Apps Script has no doGet/doPost handler. Re-deploy the current Code.gs.',
+  SCRIPT_ERROR_PAGE:      'The Apps Script threw before it could return JSON. Check the script executions log.',
+  NOT_FOUND:              'The Apps Script URL returned 404. The deployment no longer exists — create a new one and update the saved URL.',
+  UNEXPECTED_HTML:        'Apps Script returned an HTML page instead of JSON.',
+  NON_JSON:               'Apps Script returned a body that is not valid JSON.',
+  BAD_STATUS:             'Apps Script returned an unexpected HTTP status.',
+  TIMEOUT:                'Apps Script did not respond in time. The spreadsheet may be very large or Google may be throttling the script.',
+  NETWORK:                'Could not reach Google Apps Script.',
 };
 
-// Only transient conditions are worth a second attempt. A misconfigured
-// deployment is retried zero times - retrying it is what produced the log flood.
+// Transient classes are worth exactly one retry; configuration classes are not
+// (retrying a wrong URL forever is what flooded the logs).
 const RETRYABLE = new Set(['QUOTA_EXCEEDED', 'DEPLOYMENT_UNAVAILABLE', 'SCRIPT_ERROR_PAGE', 'UNFOLLOWED_REDIRECT', 'BAD_STATUS', 'TIMEOUT', 'NETWORK']);
 const CONFIG_ERROR = new Set(['MISSING_URL', 'DEV_URL', 'EDITOR_URL', 'NOT_APPS_SCRIPT', 'NOT_EXEC', 'GOOGLE_LOGIN_PAGE', 'AUTHORIZATION_REQUIRED', 'NO_PERMISSION', 'NOT_FOUND', 'MISSING_HANDLER']);
 
-// One log line per cause per minute, instead of one per failed request.
+// Log throttling: one line per (code + endpoint) per minute. The same broken
+// deployment used to print a 500-character HTML dump on every single request.
 const logSeen = new Map();
 function logOnce(key, message) {
   const now = Date.now();
-  const last = logSeen.get(key) || 0;
-  if (now - last < 60000) return;
+  if (now - (logSeen.get(key) || 0) < 60000) return;
   logSeen.set(key, now);
-  if (logSeen.size > 200) for (const [k, t] of logSeen) if (now - t > 300000) logSeen.delete(k);
   console.error(message);
 }
 
-async function fetchWithTimeout(url, options, timeoutMs) {
+function fetchWithTimeout(url, options, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...options, signal: controller.signal, timeout: timeoutMs });
-  } finally {
-    clearTimeout(timer);
-  }
+  return fetch(url, { ...options, signal: controller.signal, timeout: timeoutMs })
+    .finally(() => clearTimeout(timer));
 }
 
-// One attempt: send, follow Google's redirect chain as GET, then validate.
+// One attempt: send, follow redirects manually, then VALIDATE
+// status → content-type → JSON-parseability before trusting the body.
 async function attemptAppsScript(url, method, body, budgetMs) {
-  const startedAt = Date.now();
-  const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Accept-Encoding': 'gzip,deflate' };
+  const started = Date.now();
+  const remaining = () => Math.max(1000, Math.min(UPSTREAM_TIMEOUT_MS, budgetMs - (Date.now() - started)));
+
+  const baseHeaders = { 'Accept': 'application/json', 'Accept-Encoding': 'gzip,deflate' };
   let response;
   try {
     response = await fetchWithTimeout(url, {
       method,
-      headers,
+      headers: body ? { ...baseHeaders, 'Content-Type': 'application/json' } : baseHeaders,
       body: body ? JSON.stringify(body) : undefined,
-      redirect: 'manual',
+      redirect: 'follow',
+      follow: MAX_REDIRECTS,
       agent: agentFor(url),
       compress: true,
-    }, Math.min(UPSTREAM_TIMEOUT_MS, budgetMs));
+    }, remaining());
   } catch (err) {
-    const aborted = err.name === 'AbortError' || err.type === 'request-timeout';
-    return { ok: false, code: aborted ? 'TIMEOUT' : 'NETWORK', detail: err.message, finalUrl: url };
+    const code = err && (err.name === 'AbortError' || err.type === 'request-timeout') ? 'TIMEOUT' : 'NETWORK';
+    return { ok: false, code, status: 0, contentType: '', finalUrl: url };
   }
 
-  // Apps Script answers a POST with 302 to script.googleusercontent.com and the
-  // JSON lives at the target. The original code followed ONE hop; Google
-  // sometimes uses more, and the extra hop's HTML interstitial was being read as
-  // the response body. Follow the whole chain, as GET, with a hard cap.
-  let finalUrl = url;
-  let hops = 0;
-  while ([301, 302, 303, 307, 308].includes(response.status) && hops < MAX_REDIRECTS) {
-    const location = response.headers.get('location');
-    if (!location) break;
-    finalUrl = new URL(location, finalUrl).toString();
-    hops++;
-    const remaining = budgetMs - (Date.now() - startedAt);
-    if (remaining <= 0) return { ok: false, code: 'TIMEOUT', detail: 'budget exhausted following redirects', finalUrl };
-    try {
-      response = await fetchWithTimeout(finalUrl, {
-        method: 'GET',
-        headers,
-        redirect: 'manual',
-        agent: agentFor(finalUrl),
-        compress: true,
-      }, Math.min(UPSTREAM_TIMEOUT_MS, remaining));
-    } catch (err) {
-      const aborted = err.name === 'AbortError' || err.type === 'request-timeout';
-      return { ok: false, code: aborted ? 'TIMEOUT' : 'NETWORK', detail: err.message, finalUrl };
-    }
-  }
+  // Apps Script answers /exec with a 302 to script.googleusercontent.com.
+  // node-fetch follows that hop itself and downgrades POST -> GET on 301/302,
+  // which is exactly what Apps Script requires. Re-issuing the hop by hand
+  // risked dropping the one-shot user_content_key that the echo URL carries,
+  // so redirect handling is left to the library.
+  const finalUrl = response.url || url;
 
   const status = response.status;
   const contentType = String(response.headers.get('content-type') || '');
-  const text = await response.text();
+  let text;
+  try {
+    text = await response.text();
+  } catch {
+    return { ok: false, code: 'NETWORK', status, contentType, finalUrl };
+  }
   const head = text.slice(0, 512).trimStart();
 
-  // VALIDATION ORDER: HTML sniff -> status -> JSON.parse.
-  // HTML is checked first because Google serves its login/error pages with a
-  // 200, so trusting the status alone is exactly how HTML got this far before.
-  const looksHtml = /^<(?:!doctype|html|\?xml)/i.test(head) || /^text\/html/i.test(contentType);
-  if (looksHtml) {
+  // 1. HTML is never a valid response, whatever the status says.
+  if (/^<(?:!doctype|html|\?xml)/i.test(head) || /\btext\/html\b/i.test(contentType)) {
     return { ok: false, code: classifyHtmlBody(text, status), status, contentType, finalUrl };
   }
+  // 2. Validate the status.
   if (status < 200 || status >= 300) {
-    return { ok: false, code: 'BAD_STATUS', status, contentType, finalUrl, detail: text.slice(0, 200) };
+    return { ok: false, code: 'BAD_STATUS', status, contentType, finalUrl };
   }
+  // 3. Validate JSON parseability.
+  let data;
   try {
-    return { ok: true, data: JSON.parse(text), status, contentType, finalUrl };
+    data = JSON.parse(text);
   } catch {
-    return { ok: false, code: 'NON_JSON', status, contentType, finalUrl, detail: text.slice(0, 200) };
+    return { ok: false, code: 'NON_JSON', status, contentType, finalUrl };
   }
+  return { ok: true, data, status, contentType, finalUrl };
+}
+
+// ─── PROXY TO APPS SCRIPT ──────────────────────────────────────────────
+// Contract kept exactly as the rest of this file already expects:
+//   success → the parsed Apps Script JSON, e.g. { success: true, data: [...] }
+//   failure → { success: false, error, code, upstreamFailure: true }
+// `upstreamFailure` lets the route reply 502 instead of a 200 that the browser
+// would happily render as "0 students".
+// ─── CIRCUIT BREAKER ───────────────────────────────────
+// ROOT CAUSE of "every page is slow and everything reads zero".
+// When the deployment itself is gone (404 / stale id / login wall) EVERY key
+// misses, and each miss burned the full 20s ceiling. Opening the dashboard then
+// meant seven endpoints x 20s of dead waiting before anything could paint.
+// After two consecutive CONFIGURATION-level failures we stop calling Google for
+// 45s and answer instantly with the same diagnosis. Any success clears it.
+// Transient failures (timeout/quota) never trip it, so a slow-but-alive script
+// is still retried normally.
+const BREAKER_THRESHOLD = 2;
+const BREAKER_COOLDOWN_MS = 45000;
+const breaker = new Map();          // endpoint -> { fails, code, until }
+
+function breakerState(key) {
+  const b = breaker.get(key);
+  if (!b || !b.until || b.until <= Date.now()) return null;
+  return b;
+}
+
+function breakerRecord(key, code, ok) {
+  if (ok) { breaker.delete(key); return; }
+  const b = breaker.get(key) || { fails: 0 };
+  b.fails += 1;
+  b.code = code;
+  if (CONFIG_ERROR.has(code) && b.fails >= BREAKER_THRESHOLD) {
+    b.until = Date.now() + BREAKER_COOLDOWN_MS;
+  }
+  breaker.set(key, b);
 }
 
 async function proxyToAppsScript(rawUrl, method = 'GET', body = null) {
   const base = normaliseAppsScriptUrl(rawUrl);
   const query = String(rawUrl || '').includes('?') ? String(rawUrl).slice(String(rawUrl).indexOf('?')) : '';
   const urlClass = classifyAppsScriptUrl(base);
-  const action = (body && body.action) || (query.match(/action=([A-Za-z]+)/) || [])[1] || method;
 
-  // Fail fast on a bad URL: no network call, no 20s wait, no retry.
+  // Fail fast on a misconfigured endpoint. No network call, no 30s wait.
   if (urlClass !== 'OK') {
-    logOnce(`url:${urlClass}`, `[AppsScript] ${urlClass} endpoint=${safeUrlLabel(base)} action=${action} \u2014 ${DIAGNOSIS[urlClass]}`);
-    return { success: false, error: DIAGNOSIS[urlClass], code: urlClass, configurationError: true, upstreamFailure: true };
+    logOnce(`url:${urlClass}:${safeUrlLabel(base)}`,
+      `[AppsScript] ${urlClass} for ${safeUrlLabel(base)} — ${DIAGNOSIS[urlClass]}`);
+    return { success: false, error: DIAGNOSIS[urlClass], code: urlClass, upstreamFailure: true };
   }
 
-  const target = base + query;
+  const url = base + query;
+
+  // Breaker open: answer immediately rather than waiting on a known-dead
+  // endpoint. This is not hiding the error - it is the SAME diagnosis, just
+  // delivered in 1ms instead of 20000ms.
+  const tripped = breakerState(base);
+  if (tripped) {
+    return {
+      success: false,
+      error: DIAGNOSIS[tripped.code] || 'Apps Script is not reachable.',
+      code: tripped.code,
+      configurationError: CONFIG_ERROR.has(tripped.code),
+      upstreamFailure: true,
+      breakerOpen: true,
+    };
+  }
+
   const deadline = Date.now() + UPSTREAM_TOTAL_BUDGET_MS;
   let last = null;
 
   for (let attempt = 0; attempt < 2; attempt++) {
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) break;
-    last = await attemptAppsScript(target, method, body, remaining);
-    if (last.ok) return last.data;
-
-    // A write is NEVER replayed. addStudent/updateFees are not idempotent, and
-    // a retried POST is how duplicate students and duplicate fee rows appear.
-    if (method !== 'GET') break;
+    const budget = deadline - Date.now();
+    if (budget < 1500) break;
+    last = await attemptAppsScript(url, method, body, budget);
+    if (last.ok) { breakerRecord(base, null, true); return last.data; }
     if (!RETRYABLE.has(last.code)) break;
-    if (deadline - Date.now() <= 800) break;
-    await new Promise((r) => setTimeout(r, 600));
+    // A write is NOT replayed — Apps Script may already have committed the row,
+    // and replaying it could duplicate a student or a fee record.
+    if (method !== 'GET') break;
+    if (attempt === 0) await new Promise((r) => setTimeout(r, 600));
   }
 
   const code = (last && last.code) || 'NETWORK';
-  let finalHost = '';
-  try { finalHost = last && last.finalUrl ? new URL(last.finalUrl).host : ''; } catch {}
-
-  // One structured, secret-free line with everything needed to fix it. The HTML
-  // body itself is deliberately NOT logged - it is megabytes of Google markup
-  // and was the reason the log was unreadable.
-  logOnce(`resp:${code}:${action}`, [
-    `[AppsScript] ${code}`,
-    `action=${action}`,
+  breakerRecord(base, code, false);
+  const action = /action=([A-Za-z]+)/.exec(query);
+  logOnce(`resp:${code}:${action ? action[1] : method}`, [
+    '[AppsScript] request failed',
+    `code=${code}`,
     `method=${method}`,
-    `httpStatus=${last && last.status !== undefined ? last.status : 'n/a'}`,
-    `contentType=${(last && last.contentType) || 'n/a'}`,
+    `action=${action ? action[1] : (body && body.action) || 'n/a'}`,
+    `httpStatus=${last ? last.status : 0}`,
+    `contentType=${last ? (last.contentType || 'n/a') : 'n/a'}`,
     `endpoint=${safeUrlLabel(base)}`,
-    finalHost ? `finalHost=${finalHost}` : '',
-    `\u2014 ${DIAGNOSIS[code] || 'Unexpected Apps Script failure.'}`,
-  ].filter(Boolean).join(' '));
+    `finalHost=${last && last.finalUrl ? (() => { try { return new URL(last.finalUrl).host; } catch { return 'n/a'; } })() : 'n/a'}`,
+    `→ ${DIAGNOSIS[code] || 'Unknown Apps Script failure.'}`,
+  ].join(' | '));
 
   return {
     success: false,
-    error: DIAGNOSIS[code] || 'Apps Script request failed.',
+    error: DIAGNOSIS[code] || 'Apps Script did not return a valid response.',
     code,
     configurationError: CONFIG_ERROR.has(code),
     upstreamFailure: true,
   };
 }
 
-// An upstream failure must NOT look like success.
-// Previously every route did res.json(data) with HTTP 200 even when data was
-// { success:false, error:'<!DOCTYPE html>...' }. The Students page reads
-// res.data.data || [], so a hard failure rendered as "No students yet" - an
-// empty list that looked like real, correct data. Now it is a 502 and the UI
-// shows one real error.
+// Every route replies through this, so an upstream failure can never be
+// mistaken for an empty-but-successful dataset by the frontend.
 function respond(res, data, extra) {
   if (data && data.upstreamFailure) {
     return res.status(502).json({ success: false, error: data.error, code: data.code });
   }
   if (data && data.success === false && data.error) {
-    return res.status(400).json(data);
+    return res.status(400).json({ success: false, error: data.error });
   }
   return res.json(extra ? { ...data, ...extra } : data);
 }
@@ -397,7 +434,26 @@ async function cachedGet(cacheKey, url) {
 
   // Cold miss (or invalidated by a save): the only path that waits.
   const data = await fetchUpstream(cacheKey, url);
-  if (isUsable(data)) setCached(cacheKey, data, url);
+  if (isUsable(data)) {
+    setCached(cacheKey, data, url);
+    return data;
+  }
+
+  // Upstream failed. If we ever held good data for this key, serve THAT rather
+  // than letting the page render as zeros. A broken Sheets connection should
+  // degrade to "last known figures", not to a screen of 0s. The response
+  // declares stale: true so the UI can say so honestly, and the underlying
+  // failure is still logged and still classified.
+  const held = lastGood.get(cacheKey);
+  if (held && isUsable(held.data)) {
+    return {
+      ...held.data,
+      stale: true,
+      staleSince: held.ts,
+      upstreamError: data && data.error,
+      code: data && data.code,
+    };
+  }
   return data;
 }
 
@@ -427,13 +483,12 @@ router.post('/students', requireInstitute, async (req, res) => {
   }
 });
 
-// Exactly ONE upstream call per save. Apps Script now returns the saved row
-// (and syncs the denormalised name into Fees/Attendance in the same execution),
-// so the client can update its state from this response instead of refetching
-// the whole student list.
 router.put('/students/:sid', requireInstitute, async (req, res) => {
   try {
     const { appsScriptUrl, id } = req.user;
+    // ONE upstream call. Apps Script returns the saved row (and how many Fees /
+    // Attendance identity cells it synced), so the frontend can update just
+    // that student in state instead of refetching the whole list.
     const data = await proxyToAppsScript(appsScriptUrl, 'POST', {
       action: 'updateStudent', studentId: req.params.sid, ...req.body
     });
@@ -717,45 +772,41 @@ router.delete('/schedule/:sid', requireInstitute, async (req, res) => {
   }
 });
 
-
-// \u2500\u2500\u2500 APPS SCRIPT HEALTH CHECK \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-// Answers "is this institute's Apps Script deployment actually reachable, and
-// if not, exactly which of the HTML causes is it?" without reading logs.
-// Bypasses the cache on purpose. Secrets are masked.
+// ─── APPS SCRIPT DIAGNOSTICS ────────────────────────────────────────────
+// Lets the Apps Script integration be verified without reading Render logs.
+// Reports the exact facts needed to diagnose an HTML response, with the
+// deployment id masked so the capability URL is never exposed.
 router.get('/apps-script-health', requireInstitute, async (req, res) => {
   const { appsScriptUrl } = req.user;
   const base = normaliseAppsScriptUrl(appsScriptUrl);
   const urlClass = classifyAppsScriptUrl(base);
-
-  if (urlClass !== 'OK') {
-    return res.status(200).json({
-      ok: false, endpoint: safeUrlLabel(base), urlShape: urlClass,
-      usesExec: /\/exec$/.test(base), urlValid: false,
-      code: urlClass, diagnosis: DIAGNOSIS[urlClass],
-    });
-  }
-
-  const startedAt = Date.now();
-  const probe = await attemptAppsScript(`${base}?action=getStudents`, 'GET', null, UPSTREAM_TIMEOUT_MS);
-  let finalHost = '';
-  try { finalHost = probe.finalUrl ? new URL(probe.finalUrl).host : ''; } catch {}
-
-  const rows = probe.ok && probe.data && Array.isArray(probe.data.data) ? probe.data.data.length : null;
-  res.status(200).json({
-    ok: !!probe.ok,
+  const report = {
     endpoint: safeUrlLabel(base),
     urlShape: urlClass,
-    usesExec: true,
-    urlValid: true,
-    elapsedMs: Date.now() - startedAt,
-    httpStatus: probe.status !== undefined ? probe.status : null,
-    contentType: probe.contentType || null,
-    finalHost,
-    jsonParsed: !!probe.ok,
-    contractOk: !!(probe.ok && probe.data && probe.data.success === true),
-    studentRows: rows,
-    code: probe.ok ? null : probe.code,
-    diagnosis: probe.ok ? 'Apps Script responded with valid JSON.' : (DIAGNOSIS[probe.code] || 'Unexpected failure.'),
+    usesExec: /\/exec$/.test(base),
+    urlValid: urlClass === 'OK',
+  };
+  if (urlClass !== 'OK') {
+    return res.status(502).json({ success: false, ...report, code: urlClass, diagnosis: DIAGNOSIS[urlClass] });
+  }
+  const started = Date.now();
+  const probe = await attemptAppsScript(`${base}?action=getStudents`, 'GET', null, UPSTREAM_TIMEOUT_MS);
+  const elapsedMs = Date.now() - started;
+  let finalHost = 'n/a';
+  try { finalHost = new URL(probe.finalUrl).host; } catch {}
+  if (!probe.ok) {
+    return res.status(502).json({
+      success: false, ...report, elapsedMs,
+      httpStatus: probe.status, contentType: probe.contentType || null, finalHost,
+      code: probe.code, diagnosis: DIAGNOSIS[probe.code] || 'Unknown Apps Script failure.',
+    });
+  }
+  return res.json({
+    success: true, ...report, elapsedMs,
+    httpStatus: probe.status, contentType: probe.contentType || null, finalHost,
+    jsonParsed: true,
+    contractOk: probe.data && probe.data.success === true && Array.isArray(probe.data.data),
+    studentRows: probe.data && Array.isArray(probe.data.data) ? probe.data.data.length : null,
   });
 });
 

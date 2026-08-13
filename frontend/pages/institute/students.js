@@ -278,7 +278,7 @@ export default function StudentsPage() {
               <table className="sc-table">
                 <thead>
                   <tr>
-                    {['#', 'ID', 'Name', 'Phone', 'Parent Contact', 'Course', 'Joining Date', 'Actions'].map(h => (
+                    {['ID', 'Name', 'Phone', 'Parent Contact', 'Course', 'Joining Date', 'Actions'].map(h => (
                       <th key={h} className={h === 'Actions' ? 'th-act' : undefined}>{h}</th>
                     ))}
                   </tr>
@@ -286,7 +286,6 @@ export default function StudentsPage() {
                 <tbody>
                   {filtered.map((s, i) => (
                     <tr key={s.StudentID} className="row" style={{ animationDelay: `${Math.min(i, 12) * 28}ms` }}>
-                      <td className="serial">{i + 1}</td>
                       <td><span className="idchip">{s.StudentID}</span></td>
                       <td>
                         <div className="who">
@@ -336,10 +335,7 @@ export default function StudentsPage() {
                     <p className="scard-n">{s.StudentName}</p>
                     <span className="sc-badge course">{s.Course}</span>
                   </div>
-                  <span className="scard-nums">
-                    <span className="serial-chip">#{i + 1}</span>
-                    <span className="idchip">{s.StudentID}</span>
-                  </span>
+                  <span className="idchip">{s.StudentID}</span>
                 </div>
 
                 <div className="scard-grid">

@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import InstituteLayout from '../../components/layout/InstituteLayout';
 import CountUp from '../../components/ui/CountUp';
-import api, { getUser } from '../../lib/api';
+import api, { getUser, errorMessage } from '../../lib/api';
 import { T, STATUS } from '../../components/ds/tokens';
 
 /* ==========================================================================
@@ -32,6 +32,7 @@ const toneVars = (c, tint) => ({ '--sc-tone': c, '--sc-tone-tint': tint });
 export default function InstituteDashboard() {
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [user, setUser] = useState(null);
   const router = useRouter();
 
@@ -46,8 +47,14 @@ export default function InstituteDashboard() {
     try {
       const res = await api.get('/api/sheets/dashboard-summary');
       setSummary(res.data.data);
+      // The backend now declares when it is serving last-known figures.
+      setLoadError(res.data?.stale
+        ? (res.data.upstreamError || 'Showing the last figures that synced successfully.')
+        : '');
     } catch (e) {
-      console.error('Dashboard summary failed:', e?.response?.data || e.message);
+      // Previously this silently set null, and every derived value fell back to
+      // `?? 0` - so a failed sync rendered a full page of confident zeros.
+      setLoadError(errorMessage(e, 'Could not load dashboard figures.'));
       setSummary(null);
     } finally { setLoading(false); }
   };
@@ -156,6 +163,24 @@ export default function InstituteDashboard() {
   return (
     <InstituteLayout title="Dashboard">
       <div className="wrap">
+
+        {loadError ? (
+          <div
+            className="sc-card"
+            role="status"
+            style={{
+              padding: '12px 14px',
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 8,
+              alignItems: 'center',
+              borderLeft: '3px solid ' + T.warning,
+            }}
+          >
+            <strong style={{ fontSize: 13, color: T.text }}>Google Sheets sync unavailable</strong>
+            <span style={{ fontSize: 12.5, color: T.muted }}>{loadError}</span>
+          </div>
+        ) : null}
 
         {/* ---- Masthead ------------------------------------------------- */}
         <header className="sc-mast">

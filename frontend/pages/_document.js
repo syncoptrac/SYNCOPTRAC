@@ -20,11 +20,11 @@ html.sc-boot{background:#0B1F4D}
 html.sc-boot #__next{opacity:0}
 /* ROOT-CAUSE FIX for the remaining flash. The critical CSS above paints the
    marketing navy, but /institute/* and /admin/* render on the light app canvas
-   (#F8FAFC, exactly the value already used by InstituteLayout and the bg token).
-   So those routes painted navy first and were then repainted light the moment
-   globals.css applied - the visible "flash" was that repaint, not missing CSS.
-   The boot script below picks the correct canvas from the URL BEFORE first
-   paint, so the first pixels are already the right colour.
+   (#F8FAFC, exactly the value already used by InstituteLayout and the --sc-bg
+   token). So those routes painted navy first and were then repainted light the
+   moment globals.css applied - the visible "flash" was that repaint, not
+   missing CSS. The boot script below picks the correct canvas from the URL
+   BEFORE first paint, so the first pixels are already the right colour.
    No new colours, no layout change: the same two values the app already uses. */
 html.sc-canvas-app,html.sc-canvas-app body{background:#F8FAFC;color:#111827}
 html.sc-canvas-app #__next{background:#F8FAFC}
