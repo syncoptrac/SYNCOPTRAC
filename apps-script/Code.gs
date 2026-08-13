@@ -85,6 +85,15 @@ Best regards,<br>
 // ─── MAIN HANDLERS ────────────────────────────────────────────
 function doGet(e) {
   const params = e.parameter;
+
+  // Liveness probe. Open <your /exec URL>?action=ping in a browser:
+  //   JSON back -> the deployment is correct, any failure is data-side.
+  //   HTML back -> the deployment itself is wrong (access, or never deployed).
+  // Reads no sheet and is never cached, so it is always the honest answer.
+  if (params.action === 'ping') {
+    return jsonResponse({ success: true, pong: true, time: new Date().toISOString() });
+  }
+
   try {
     // PERF: identical read requests inside READ_CACHE_TTL are answered from
     // CacheService (~10ms) instead of re-reading the spreadsheet (~1-3s).

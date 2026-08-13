@@ -185,7 +185,7 @@ function safeUrlLabel(url) {
 }
 
 // Turn an HTML body into a precise, actionable, secret-free diagnosis.
-function classifyHtmlBody(body, status) {
+function classifyHtmlBody(body, status, finalUrl) {
   const s = String(body || '').slice(0, 4000);
   const l = s.toLowerCase();
   if (/accounts\.google\.com|servicelogin|signin\/v\d/i.test(s) || /sign in\s*[-–]\s*google accounts/i.test(l)) return 'GOOGLE_LOGIN_PAGE';
@@ -196,7 +196,16 @@ function classifyHtmlBody(body, status) {
   if (/unable to open the file|file at this time/i.test(l)) return 'DEPLOYMENT_UNAVAILABLE';
   if (/script function not found/i.test(l)) return 'MISSING_HANDLER';
   if (/server error occurred|exception:|scripterror/i.test(l)) return 'SCRIPT_ERROR_PAGE';
-  if (status === 404) return 'NOT_FOUND';
+  // A 404 only means "dead deployment" when Google rejects the /exec id itself
+  // on script.google.com. If we were redirected to script.googleusercontent.com
+  // first, Google ACCEPTED the deployment - so this 404 is a failed content
+  // fetch (the one-shot user_content_key was consumed or expired, or the run
+  // produced no retrievable output). That is transient, not configuration.
+  if (status === 404) {
+    let h = '';
+    try { h = new URL(String(finalUrl || '')).host; } catch { h = ''; }
+    return h.indexOf('googleusercontent.com') !== -1 ? 'CONTENT_FETCH_404' : 'NOT_FOUND';
+  }
   return 'UNEXPECTED_HTML';
 }
 
@@ -214,7 +223,8 @@ const DIAGNOSIS = {
   DEPLOYMENT_UNAVAILABLE: 'The Apps Script deployment is archived, deleted or temporarily unavailable. Create a new deployment and update the saved URL.',
   MISSING_HANDLER:        'The deployed Apps Script has no doGet/doPost handler. Re-deploy the current Code.gs.',
   SCRIPT_ERROR_PAGE:      'The Apps Script threw before it could return JSON. Check the script executions log.',
-  NOT_FOUND:              'The Apps Script URL returned 404. The deployment no longer exists — create a new one and update the saved URL.',
+  NOT_FOUND:              'Google rejected the deployment id itself (404 on /exec). That deployment no longer exists — create a New deployment and save its /exec URL.',
+  CONTENT_FETCH_404:      'Google accepted the request and redirected, then could not return the result (404 on the content host). The deployment is FINE - the script run produced no retrievable output, normally because several calls hit one script project at once. Retried automatically.',
   UNEXPECTED_HTML:        'Apps Script returned an HTML page instead of JSON.',
   NON_JSON:               'Apps Script returned a body that is not valid JSON.',
   BAD_STATUS:             'Apps Script returned an unexpected HTTP status.',
@@ -224,7 +234,7 @@ const DIAGNOSIS = {
 
 // Transient classes are worth exactly one retry; configuration classes are not
 // (retrying a wrong URL forever is what flooded the logs).
-const RETRYABLE = new Set(['QUOTA_EXCEEDED', 'DEPLOYMENT_UNAVAILABLE', 'SCRIPT_ERROR_PAGE', 'UNFOLLOWED_REDIRECT', 'BAD_STATUS', 'TIMEOUT', 'NETWORK']);
+const RETRYABLE = new Set(['QUOTA_EXCEEDED', 'DEPLOYMENT_UNAVAILABLE', 'SCRIPT_ERROR_PAGE', 'UNFOLLOWED_REDIRECT', 'BAD_STATUS', 'TIMEOUT', 'NETWORK', 'CONTENT_FETCH_404']);
 const CONFIG_ERROR = new Set(['MISSING_URL', 'DEV_URL', 'EDITOR_URL', 'NOT_APPS_SCRIPT', 'NOT_EXEC', 'GOOGLE_LOGIN_PAGE', 'AUTHORIZATION_REQUIRED', 'NO_PERMISSION', 'NOT_FOUND', 'MISSING_HANDLER']);
 
 // Log throttling: one line per (code + endpoint) per minute. The same broken
@@ -286,7 +296,7 @@ async function attemptAppsScript(url, method, body, budgetMs) {
 
   // 1. HTML is never a valid response, whatever the status says.
   if (/^<(?:!doctype|html|\?xml)/i.test(head) || /\btext\/html\b/i.test(contentType)) {
-    return { ok: false, code: classifyHtmlBody(text, status), status, contentType, finalUrl };
+    return { ok: false, code: classifyHtmlBody(text, status, finalUrl), status, contentType, finalUrl };
   }
   // 2. Validate the status.
   if (status < 200 || status >= 300) {
@@ -338,6 +348,29 @@ function breakerRecord(key, code, ok) {
   breaker.set(key, b);
 }
 
+// ─── ONE CALL AT A TIME PER ENDPOINT ─────────────────────────────────
+// ROOT CAUSE of the mixed TIMEOUT + 404 log.
+// Google runs at most ONE execution per script project at a time. Everything
+// else queues inside Google while our 20s clock keeps running. Loading the app
+// fired seven GETs at once, which produced BOTH failures seen in the log:
+//   • requests stuck in Google's queue blew our timeout      -> TIMEOUT
+//   • requests that did run had their one-shot content key go
+//     stale before we could fetch the body                   -> 404 on the
+//                                                               content host
+// Sending them one at a time per endpoint removes both. It is not slower in
+// practice: repeat reads are answered by CacheService in ~10ms, and the backend
+// cache means a warm page makes no upstream call at all.
+const chains = new Map();           // endpoint -> tail of its promise chain
+
+function serialise(key, task) {
+  const prev = chains.get(key) || Promise.resolve();
+  const next = prev.then(task, task);
+  // Park a settled, value-free promise as the new tail so the chain cannot grow
+  // without bound or pin previous responses in memory.
+  chains.set(key, next.then(() => {}, () => {}));
+  return next;
+}
+
 async function proxyToAppsScript(rawUrl, method = 'GET', body = null) {
   const base = normaliseAppsScriptUrl(rawUrl);
   const query = String(rawUrl || '').includes('?') ? String(rawUrl).slice(String(rawUrl).indexOf('?')) : '';
@@ -373,7 +406,17 @@ async function proxyToAppsScript(rawUrl, method = 'GET', body = null) {
   for (let attempt = 0; attempt < 2; attempt++) {
     const budget = deadline - Date.now();
     if (budget < 1500) break;
-    last = await attemptAppsScript(url, method, body, budget);
+    // Budget is re-read inside the queue: time spent waiting for our turn must
+    // count against the deadline, otherwise a queue of seven could run far past
+    // the frontend's own timeout. If our turn arrives too late we skip the call
+    // entirely so cachedGet can serve last-known-good data instead.
+    last = await serialise(base, () => {
+      const left = deadline - Date.now();
+      if (left < 1500) {
+        return { ok: false, code: 'TIMEOUT', status: 0, contentType: '', finalUrl: url };
+      }
+      return attemptAppsScript(url, method, body, left);
+    });
     if (last.ok) { breakerRecord(base, null, true); return last.data; }
     if (!RETRYABLE.has(last.code)) break;
     // A write is NOT replayed — Apps Script may already have committed the row,
