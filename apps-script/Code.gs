@@ -967,35 +967,80 @@ function sendEmail(body) {
 // one execution, so all seven datasets share the SAME reads. One call now costs
 // about what a single call used to.
 function getBundle(cycle, date) {
+  // Every dataset is produced by the SAME function the individual action uses,
+  // so a bundled payload and a single-action payload can never disagree.
+  const studentsRes  = getStudents();
+  const feesRes      = getFees(cycle);
+  const enquiriesRes = getEnquiries();
+
+  // Attendance is deliberately NOT bundled any more. It is the only sheet that
+  // grows without bound, and dumping the whole history pushed this response
+  // past the ~100KB CacheService ceiling - which silently made the ENTIRE
+  // bundle uncacheable, so the most expensive read in the app was the one read
+  // that never got cached, on every single call, forever. The Attendance page
+  // asks for the date it needs on its own: cheaper, and always complete.
   return {
     success: true,
     data: {
-      students:   getStudents(),
-      attendance: getAttendance(date, null),
-      fees:       getFees(cycle),
-      enquiries:  getEnquiries(),
+      students:   studentsRes,
+      fees:       feesRes,
+      enquiries:  enquiriesRes,
       batches:    getBatches(),
       schedule:   getSchedule(),
-      dashboard:  getDashboardSummary(cycle)
+      // Hands over what was just computed instead of re-reading Enquiries and
+      // re-running the whole fee projection a second time in one execution.
+      dashboard:  getDashboardSummary(cycle, {
+        students:  studentsRes  && studentsRes.data,
+        fees:      feesRes      && feesRes.data,
+        enquiries: enquiriesRes && enquiriesRes.data
+      })
     }
   };
 }
 
-function getDashboardSummary(cycle) {
+// PERF: today's present/absent counts WITHOUT materialising the whole
+// attendance history. Uses the same raw snapshot sheetToObjects would read, but
+// touches only the Date and Status columns and allocates nothing per row.
+// Identical semantics to the filter it replaces - toISO on the stored value,
+// case-insensitive status match.
+function attendanceTodayCounts_() {
+  var out = { present: 0, absent: 0 };
+  var data = sheetData_(getSheet(SHEETS.ATTENDANCE));
+  if (!data || data.length < 2) return out;
+  var headers = data[0];
+  var dateIdx = headers.indexOf('Date');
+  var statusIdx = headers.indexOf('Status');
+  if (dateIdx === -1 || statusIdx === -1) return out;
+  var today = todayISO();
+  for (var r = 1; r < data.length; r++) {
+    var row = data[r];
+    if (toISO(row[dateIdx]) !== today) continue;
+    var st = String(row[statusIdx]).toLowerCase();
+    if (st === 'present') out.present += 1;
+    else if (st === 'absent') out.absent += 1;
+  }
+  return out;
+}
+
+function getDashboardSummary(cycle, pre) {
   // Same canonical list the Students page renders, so the dashboard total
   // and the Students page can never disagree.
-  const students   = canonicalStudents_();
+  // Reuse anything the caller already computed in this same execution; each
+  // falls back to computing itself when called directly. An empty array is
+  // truthy in JS, so a genuinely empty sheet is NOT re-read.
+  const students   = (pre && pre.students)  || canonicalStudents_();
   // Same dynamic Status/PaidAmount/PendingAmount as the Fees page — a
   // student who rolled into an unpaid new cycle is counted as unpaid here
   // too, without needing a separate write to "reset" the sheet.
-  const fees       = computeEffectiveFeeRows(cycle);
-  const enquiries  = sheetToObjects(getSheet(SHEETS.ENQUIRIES));
-  const attendance = sheetToObjects(getSheet(SHEETS.ATTENDANCE));
+  const fees       = (pre && pre.fees)      || computeEffectiveFeeRows(cycle);
+  const enquiries  = (pre && pre.enquiries) || sheetToObjects(getSheet(SHEETS.ENQUIRIES));
 
-  const today = todayISO(); // ISO date — matches stored attendance
-  const todayAtt     = attendance.filter(a => toISO(a.Date) === today);
-  const presentToday = todayAtt.filter(a => String(a.Status).toLowerCase() === 'present').length;
-  const absentToday  = todayAtt.filter(a => String(a.Status).toLowerCase() === 'absent').length;
+  // Was: read EVERY attendance row ever recorded, build an object per row,
+  // format every date cell, then throw all but today away. That single line
+  // grew unbounded with the institute's history.
+  const att = attendanceTodayCounts_();
+  const presentToday = att.present;
+  const absentToday  = att.absent;
 
   const totalFees     = fees.reduce((s, f) => s + (parseFloat(f.TotalFee) || 0), 0);
   const collectedFees = fees.reduce((s, f) => s + (parseFloat(f.PaidAmount) || 0), 0);

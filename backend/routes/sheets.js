@@ -510,11 +510,24 @@ function respond(res, data, extra) {
 // answered from memory with no upstream call at all.
 const bundleInFlight = new Map();
 const bundleUnsupported = new Set();   // bases whose deployed script predates getBundle
+const bundleCooldownUntil = new Map(); // base -> ms timestamp, set when a bundle fails
+const BUNDLE_FAIL_COOLDOWN_MS = 5 * 60 * 1000;
 
 async function fetchBundle(id, base, cycle) {
   const key = `${id}:__bundle:${cycle}`;
   const pending = bundleInFlight.get(key);
   if (pending) return pending;
+
+  // A timed-out bundle is NOT harmless. Aborting our HTTP request does not
+  // stop the Apps Script execution - Google keeps running it, and a web app
+  // deployed 'execute as me' runs ONE execution at a time. The abandoned run
+  // keeps the slot, so the next cheap single-action read queues behind a
+  // zombie and times out as well. That cascade is exactly what produced
+  // back-to-back getBundle + getStudents timeouts. After a failure, stop
+  // bundling for a while and let the cheap reads through.
+  if (Date.now() < (bundleCooldownUntil.get(base) || 0)) {
+    return { success: false, error: 'bundle in cooldown' };
+  }
 
   const promise = (async () => {
     const res = await proxyToAppsScript(`${base}?action=getBundle&cycle=${encodeURIComponent(cycle)}`);
@@ -522,6 +535,7 @@ async function fetchBundle(id, base, cycle) {
       // An older deployment replies 'Unknown action'. Remember that and stop
       // asking, so we never pay for a wasted round trip more than once.
       if (res && /unknown action/i.test(String(res.error || ''))) bundleUnsupported.add(base);
+      else bundleCooldownUntil.set(base, Date.now() + BUNDLE_FAIL_COOLDOWN_MS);
       return res;
     }
     if (!res.data) { bundleUnsupported.add(base); return res; }
@@ -529,7 +543,9 @@ async function fetchBundle(id, base, cycle) {
     const d = res.data;
     const fan = [
       [d.students,   `${id}:students`],
-      [d.attendance, `${id}:attendance:all`],
+      // Attendance is intentionally absent: the bundle no longer carries the
+      // full history, and a partial payload must never be cached as though it
+      // were complete. That page fetches its own date.
       [d.fees,       `${id}:fees:${cycle}`],
       [d.enquiries,  `${id}:enquiries`],
       [d.batches,    `${id}:batches`],
@@ -566,6 +582,7 @@ const BUNDLE_WARM_THROTTLE_MS = 30 * 1000;
 
 function scheduleBundleWarm(id, base) {
   if (!base || bundleUnsupported.has(base)) return;
+  if (Date.now() < (bundleCooldownUntil.get(base) || 0)) return;
   if (inflightBundleFor(id)) return;
   const now = Date.now();
   if (now - (lastBundleWarm.get(id) || 0) < BUNDLE_WARM_THROTTLE_MS) return;
