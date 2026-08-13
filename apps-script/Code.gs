@@ -631,21 +631,34 @@ function updateIdentityColumns_(sheet, studentId, values) {
     var col = headers.indexOf(colName);
     if (col === -1) return;
 
-    var column = [];
-    var changed = false;
+    // PERF ROOT CAUSE (slow updateStudent).
+    // This used to rebuild the ENTIRE column and write every row back whenever
+    // a single cell changed. Renaming one student therefore rewrote every row of
+    // Attendance - the only sheet in the app that grows without limit - so the
+    // cost of a rename scaled with total attendance history instead of with the
+    // one student. On a large sheet that single setValues call is what pushed
+    // updateStudent past the timeout.
+    // Only the rows belonging to THIS student are written now, in contiguous
+    // blocks, so a rename costs a handful of cells instead of a whole column.
+    var runStart = -1;
+    var run = [];
+    var flush = function () {
+      if (runStart === -1) return;
+      sheet.getRange(runStart + 1, col + 1, run.length, 1).setValues(run);
+      wrote = true;
+      runStart = -1;
+      run = [];
+    };
     for (var i = 1; i < data.length; i++) {
-      var current = data[i][col];
-      if (String(data[i][sidCol]) === sid && String(current) !== String(value)) {
-        column.push([value]);
-        changed = true;
+      if (String(data[i][sidCol]) === sid && String(data[i][col]) !== String(value)) {
+        if (runStart === -1) runStart = i;   // data row i == sheet row i + 1
+        run.push([value]);
         rowsChanged++;
       } else {
-        column.push([current]);
+        flush();
       }
     }
-    if (!changed) return;
-    sheet.getRange(2, col + 1, column.length, 1).setValues(column);
-    wrote = true;
+    flush();
   });
 
   if (wrote) {

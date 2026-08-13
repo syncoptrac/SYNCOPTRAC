@@ -120,62 +120,93 @@ export default function StudentsPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (saving) return;   // a double click can no longer send two writes
+    if (saving) return;                  // a double click still cannot send two writes
     setSaving(true);
+
+    // Frozen now: the modal closes immediately, so `form` may be reset or
+    // reused before the request finishes.
+    const payload = { ...form };
+    const editing = editId;
+
+    // INSTANT, exactly like delete.
+    // The upstream sheet write takes 1-3s on a good day, and can additionally
+    // queue behind another Apps Script execution - so awaiting it before
+    // touching the UI is what made saving feel broken. The list is updated
+    // first and the request is reconciled afterwards, which is the pattern
+    // handleDelete already used.
+    if (editing) {
+      const merge = (s) => (String(s.StudentID) !== String(editing) ? s : {
+        ...s,
+        StudentName: payload.studentName, Phone: payload.phone,
+        ParentContact: payload.parentContact, Email: payload.email,
+        Course: payload.course, Address: payload.address,
+      });
+      setStudents((prev) => prev.map(merge));
+      patchCache(STUDENTS_URL, (cached) => ({
+        ...cached,
+        data: canonicalStudents(cached?.data).map(merge),
+      }));
+    } else {
+      // Only the sheet can assign the real StudentID, so the placeholder holds a
+      // temporary one until the server answers. The visible numbering is
+      // positional, so nothing looks out of order in the meantime.
+      const temp = {
+        StudentID: `tmp-${Date.now()}`,
+        StudentName: payload.studentName, Phone: payload.phone,
+        ParentContact: payload.parentContact, Email: payload.email,
+        Course: payload.course, Address: payload.address,
+        JoiningDate: payload.joiningDate || '',
+      };
+      setStudents((prev) => [...prev, temp]);
+      patchCache(STUDENTS_URL, (cached) => ({
+        ...cached,
+        data: [...canonicalStudents(cached?.data), temp],
+      }));
+    }
+
+    setShowModal(false);
+    toast.success(editing ? 'Student updated' : 'Student added');
+
     try {
-      if (editId) {
-        // ONE request. The response carries the saved row, so the edited
-        // student is patched straight into state and the cache - no blocking
-        // refetch of the whole list, and no refetch of the other modules.
-        const res = await api.put(`/api/sheets/students/${editId}`, form);
+      if (editing) {
+        const res = await api.put(`/api/sheets/students/${editing}`, payload);
+        // Replace the optimistic row with the row the sheet actually stored, so
+        // any server-side normalisation is reflected rather than assumed.
         const saved = res.data?.student;
-        const merge = (s) => (String(s.StudentID) !== String(editId) ? s : {
-          ...s,
-          ...(saved || {
-            StudentName: form.studentName, Phone: form.phone,
-            ParentContact: form.parentContact, Email: form.email,
-            Course: form.course, Address: form.address,
-          }),
-        });
-        if (alive.current) setStudents((prev) => prev.map(merge));
-        patchCache(STUDENTS_URL, (cached) => ({
-          ...cached,
-          data: canonicalStudents(cached?.data).map(merge),
-        }));
-        toast.success('Student updated');
-        setShowModal(false);
+        if (saved && alive.current) {
+          const exact = (s) => (String(s.StudentID) !== String(editing) ? s : { ...s, ...saved });
+          setStudents((prev) => prev.map(exact));
+          patchCache(STUDENTS_URL, (cached) => ({
+            ...cached,
+            data: canonicalStudents(cached?.data).map(exact),
+          }));
+        }
       } else {
-        await api.post('/api/sheets/students', form);
-        toast.success('Student added');
-        setShowModal(false);
-        // A new row needs its server-assigned StudentID, so read the list once.
+        await api.post('/api/sheets/students', payload);
+        // Now - and only now - the placeholder needs its server-assigned id.
         await fetchStudents({ silent: true });
       }
-
-      // Background revalidation only. The UI already shows the saved state, so
-      // this never blocks the user and never shows a spinner again.
-      revalidate(STUDENTS_URL).then((data) => {
-        if (!alive.current || !data) return;
-        setStudents(canonicalStudents(data.data));
-      });
     } catch (err) {
-      if (isCancel(err)) {
-        // Superseded by a newer request - not a failure.
-      } else if (err?.response?.data?.unconfirmed) {
-        // The write was sent and Apps Script stopped answering, but it may well
-        // have committed - in production it had. Calling this "failed" makes the
-        // user press Save again and create a duplicate. Say what is true and
-        // show what the sheet actually contains.
-        setShowModal(false);
+      if (isCancel(err) || !alive.current) return;
+      if (err?.response?.data?.unconfirmed) {
+        // Sent, never confirmed - it may well have committed, and in production
+        // it had. Do NOT roll back and do not call it a failure, or the user
+        // saves again and duplicates the row.
         notifyError('student-save', 'Save not confirmed — showing the current list.');
         await fetchStudents({ silent: true });
-      } else {
-        notifyError('student-save', errorMessage(err, 'Save failed'));
+        return;
       }
+      // A genuine refusal: undo the optimistic change rather than leave the list
+      // showing a save that never reached the sheet.
+      notifyError('student-save', errorMessage(err, 'Save failed'));
+      await fetchStudents({ silent: true });
     } finally { if (alive.current) setSaving(false); }
   };
 
   const handleDelete = async (id, name) => {
+    // A row that is still being created has no server id yet, so there is
+    // nothing upstream to delete; it reconciles away on its own.
+    if (String(id).indexOf('tmp-') === 0) return;
     if (!confirm(`Delete student "${name}"?`)) return;
 
     const sid = String(id);
