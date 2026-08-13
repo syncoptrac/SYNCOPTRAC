@@ -195,8 +195,8 @@ const APPS_SCRIPT_EXEC = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_
 // our own API instead of the client-side "timeout of 30000ms exceeded".
 // This is not "raising a timeout" — previously there was NO timeout at all,
 // so a hanging Google request held the socket until the client gave up.
-const UPSTREAM_TIMEOUT_MS = 20000;
-const UPSTREAM_TOTAL_BUDGET_MS = 26000;
+const UPSTREAM_TIMEOUT_MS = 12000;
+const UPSTREAM_TOTAL_BUDGET_MS = 20000;
 const MAX_REDIRECTS = 5;
 
 function normaliseAppsScriptUrl(raw) {
@@ -548,6 +548,37 @@ async function fetchBundle(id, base, cycle) {
   return promise;
 }
 
+// Is a bundle for this institute already running? Answered without needing the
+// fee cycle, so the hot path never waits on a Mongo lookup just to find out.
+function inflightBundleFor(id) {
+  const prefix = `${id}:__bundle:`;
+  for (const [k, p] of bundleInFlight.entries()) {
+    if (k.startsWith(prefix)) return p;
+  }
+  return null;
+}
+
+// One background bundle per institute per 30s. This is what makes the OTHER
+// tabs open instantly, without ever sitting in front of the page the user is
+// actually waiting for.
+const lastBundleWarm = new Map();
+const BUNDLE_WARM_THROTTLE_MS = 30 * 1000;
+
+function scheduleBundleWarm(id, base) {
+  if (!base || bundleUnsupported.has(base)) return;
+  if (inflightBundleFor(id)) return;
+  const now = Date.now();
+  if (now - (lastBundleWarm.get(id) || 0) < BUNDLE_WARM_THROTTLE_MS) return;
+  lastBundleWarm.set(id, now);
+  (async () => {
+    try {
+      await fetchBundle(id, base, await getFeeCycle(id));
+    } catch {
+      // A background warm must never surface to the user.
+    }
+  })();
+}
+
 async function cachedGet(cacheKey, url) {
   const entry = cacheEntry(cacheKey);
 
@@ -562,25 +593,39 @@ async function cachedGet(cacheKey, url) {
   }
 
   // Cold miss (or invalidated by a save): the only path that waits.
-  // Fill EVERY key from one bundled execution first, so the other pages are
-  // already in memory by the time they ask. The fee cycle is resolved the same
-  // way the /fees and /dashboard-summary routes resolve it, so the keys written
-  // here are exactly the keys those routes look up.
+  //
+  // REGRESSION FIX. This used to `await fetchBundle(...)` here, so a page that
+  // needed ONE dataset waited for all seven. Against the pre-change baseline -
+  // one single-action call per page - that made every first paint and every
+  // post-save refetch several times slower. The bundle is still used, but only
+  // where it costs the user nothing.
   const bundleBase = normaliseAppsScriptUrl(url);
-  if (!bundleUnsupported.has(bundleBase) && !String(cacheKey).includes(':__bundle:')) {
-    try {
-      const id = String(cacheKey).split(':')[0];
-      await fetchBundle(id, bundleBase, await getFeeCycle(id));
-      const filled = cacheEntry(cacheKey);
-      if (filled && filled.state === 'fresh') return filled.data;
-    } catch {
-      // Fall through to this key's own single-action call below.
+  const instituteId = String(cacheKey).split(':')[0];
+  const isBundleKey = String(cacheKey).includes(':__bundle:');
+
+  // If a bundle is ALREADY in flight (a save just invalidated everything, or
+  // another tab warmed it), join it rather than firing a second call. Google
+  // executes one instance of a script project at a time, so a competing
+  // single-action call would queue behind that bundle regardless.
+  if (!isBundleKey) {
+    const running = inflightBundleFor(instituteId);
+    if (running) {
+      try {
+        await running;
+        const filled = cacheEntry(cacheKey);
+        if (filled && filled.state === 'fresh') return filled.data;
+      } catch {
+        // Fall through to this key's own call.
+      }
     }
   }
 
   const data = await fetchUpstream(cacheKey, url);
   if (isUsable(data)) {
     setCached(cacheKey, data, url);
+    // The page the user asked for now has its data. Quietly fill the rest in a
+    // single execution so the next tab they open is instant.
+    if (!isBundleKey) scheduleBundleWarm(instituteId, bundleBase);
     return data;
   }
 

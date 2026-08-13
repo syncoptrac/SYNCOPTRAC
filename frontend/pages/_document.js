@@ -39,7 +39,7 @@ h.className=(h.className?h.className+' ':'')+'sc-boot'+(app?' sc-canvas-app':'')
 function show(){if(done)return;done=1;if(iv)clearInterval(iv);
 h.className=h.className.replace(/(^|\s)sc-boot(\s|$)/g,' ').replace(/\s+/g,' ').replace(/^\s|\s$/g,'');}
 function ready(){var l=d.querySelectorAll('link[rel="stylesheet"]');
-if(!l.length)return d.readyState==='complete';
+if(!l.length)return d.readyState!=='loading';
 for(var i=0;i<l.length;i++){var s=null;try{s=l[i].sheet}catch(e){s=1}if(!s)return false}return true}
 iv=setInterval(function(){t+=25;if(ready()||t>=1200)show()},25);
 d.addEventListener('DOMContentLoaded',function(){if(ready())show()});
