@@ -159,7 +159,19 @@ export default function StudentsPage() {
         setStudents(canonicalStudents(data.data));
       });
     } catch (err) {
-      if (!isCancel(err)) notifyError('student-save', errorMessage(err, 'Save failed'));
+      if (isCancel(err)) {
+        // Superseded by a newer request - not a failure.
+      } else if (err?.response?.data?.unconfirmed) {
+        // The write was sent and Apps Script stopped answering, but it may well
+        // have committed - in production it had. Calling this "failed" makes the
+        // user press Save again and create a duplicate. Say what is true and
+        // show what the sheet actually contains.
+        setShowModal(false);
+        notifyError('student-save', 'Save not confirmed — showing the current list.');
+        await fetchStudents({ silent: true });
+      } else {
+        notifyError('student-save', errorMessage(err, 'Save failed'));
+      }
     } finally { if (alive.current) setSaving(false); }
   };
 
@@ -189,6 +201,14 @@ export default function StudentsPage() {
       });
     } catch (err) {
       if (isCancel(err) || !alive.current) return;
+      if (err?.response?.data?.unconfirmed) {
+        // Sent, never confirmed. The row may already be gone from the sheet, so
+        // putting it back would be just as wrong as leaving it out. Ask the
+        // sheet what is really there instead of guessing.
+        notifyError('student-delete', 'Delete not confirmed — showing the current list.');
+        await fetchStudents({ silent: true });
+        return;
+      }
       // The delete did not happen - put the student back rather than leaving the
       // list showing a deletion that never reached the sheet.
       setStudents(snapshot);

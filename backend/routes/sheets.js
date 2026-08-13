@@ -132,28 +132,16 @@ async function fetchUpstream(key, url) {
 // exactly one upstream call, only for data somebody actually asked for.
 function bustCache(instituteId) {
   const prefix = String(instituteId);
-  let base = null;
   for (const [key, entry] of cache.entries()) {
-    if (key.startsWith(prefix)) {
-      entry.mustRevalidate = true;
-      // The endpoint is already recorded on each cache entry, so this warm needs
-      // no extra argument and no change to the 15 write call sites.
-      if (!base && entry.url) base = normaliseAppsScriptUrl(entry.url);
-    }
+    if (key.startsWith(prefix)) entry.mustRevalidate = true;
   }
 
-  // Refill everything in the BACKGROUND with a single bundled call, so the next
-  // page opened after saving or deleting is already warm. This was removed in
-  // round 1 when it cost seven serial calls; at one call it is cheap.
-  if (base && !bundleUnsupported.has(base)) {
-    (async () => {
-      try {
-        await fetchBundle(prefix, base, await getFeeCycle(prefix));
-      } catch {
-        // A background warm must never surface to the user.
-      }
-    })();
-  }
+  // Deliberately NOTHING is re-fetched here.
+  // Apps Script runs one execution at a time, so any read started now becomes
+  // the thing the user's very next click has to queue behind - and a save is
+  // usually followed immediately by another click. Marking the keys for
+  // revalidation is enough: the next page that actually needs data fetches its
+  // own single key.
 }
 
 // Sequential on purpose: Google throttles concurrent executions of a single
@@ -407,7 +395,7 @@ function breakerRecord(key, code, ok) {
 // It converted "six parallel reads" into "one slow read plus five dropped
 // before they were ever sent" - the six httpStatus=0 TIMEOUT lines in the
 // Render log, and the 20s dashboard. Requests are issued directly again; the
-// pile-up is cured by asking for everything in ONE call (see fetchBundle).
+// pile-up is cured by keeping every upstream call small and cacheable.
 
 async function proxyToAppsScript(rawUrl, method = 'GET', body = null) {
   const base = normaliseAppsScriptUrl(rawUrl);
@@ -484,6 +472,12 @@ async function proxyToAppsScript(rawUrl, method = 'GET', body = null) {
     code,
     configurationError: CONFIG_ERROR.has(code),
     upstreamFailure: true,
+    // A write that was SENT and then timed out may already have been committed:
+    // Apps Script keeps running after we stop listening, and in production a
+    // timed-out addStudent did in fact reach the sheet. The UI must not report
+    // that as a failure, or the user presses Save again and duplicates the row.
+    unconfirmed:
+      isWrite && !(last && last.notSent) && (code === 'TIMEOUT' || code === 'NETWORK'),
   };
 }
 
@@ -491,7 +485,13 @@ async function proxyToAppsScript(rawUrl, method = 'GET', body = null) {
 // mistaken for an empty-but-successful dataset by the frontend.
 function respond(res, data, extra) {
   if (data && data.upstreamFailure) {
-    return res.status(502).json({ success: false, error: data.error, code: data.code });
+    return res.status(502).json({
+      success: false,
+      error: data.error,
+      code: data.code,
+      // "We could not confirm this" is NOT the same as "this failed".
+      unconfirmed: !!data.unconfirmed,
+    });
   }
   if (data && data.success === false && data.error) {
     return res.status(400).json({ success: false, error: data.error });
@@ -500,101 +500,25 @@ function respond(res, data, extra) {
 }
 
 // ─── CACHED GET HELPER ───────────────────────────────────────────────────────
-// ─── ONE UPSTREAM CALL SERVES EVERY PAGE ─────────────────────────────
-// ROOT CAUSE of "the dashboard takes 20 seconds".
-// A cold load asked Apps Script for students, attendance, fees, enquiries,
-// batches, schedule and the dashboard SEPARATELY. Google runs one execution per
-// script project at a time, so those seven calls could only ever run one after
-// another. getBundle returns all seven from a single execution, and the result
-// is fanned out into the individual cache keys - so the other six routes are
-// answered from memory with no upstream call at all.
-const bundleInFlight = new Map();
-const bundleUnsupported = new Set();   // bases whose deployed script predates getBundle
-const bundleCooldownUntil = new Map(); // base -> ms timestamp, set when a bundle fails
-const BUNDLE_FAIL_COOLDOWN_MS = 5 * 60 * 1000;
-
-async function fetchBundle(id, base, cycle) {
-  const key = `${id}:__bundle:${cycle}`;
-  const pending = bundleInFlight.get(key);
-  if (pending) return pending;
-
-  // A timed-out bundle is NOT harmless. Aborting our HTTP request does not
-  // stop the Apps Script execution - Google keeps running it, and a web app
-  // deployed 'execute as me' runs ONE execution at a time. The abandoned run
-  // keeps the slot, so the next cheap single-action read queues behind a
-  // zombie and times out as well. That cascade is exactly what produced
-  // back-to-back getBundle + getStudents timeouts. After a failure, stop
-  // bundling for a while and let the cheap reads through.
-  if (Date.now() < (bundleCooldownUntil.get(base) || 0)) {
-    return { success: false, error: 'bundle in cooldown' };
-  }
-
-  const promise = (async () => {
-    const res = await proxyToAppsScript(`${base}?action=getBundle&cycle=${encodeURIComponent(cycle)}`);
-    if (!isUsable(res)) {
-      // An older deployment replies 'Unknown action'. Remember that and stop
-      // asking, so we never pay for a wasted round trip more than once.
-      if (res && /unknown action/i.test(String(res.error || ''))) bundleUnsupported.add(base);
-      else bundleCooldownUntil.set(base, Date.now() + BUNDLE_FAIL_COOLDOWN_MS);
-      return res;
-    }
-    if (!res.data) { bundleUnsupported.add(base); return res; }
-
-    const d = res.data;
-    const fan = [
-      [d.students,   `${id}:students`],
-      // Attendance is intentionally absent: the bundle no longer carries the
-      // full history, and a partial payload must never be cached as though it
-      // were complete. That page fetches its own date.
-      [d.fees,       `${id}:fees:${cycle}`],
-      [d.enquiries,  `${id}:enquiries`],
-      [d.batches,    `${id}:batches`],
-      [d.schedule,   `${id}:schedule`],
-      [d.dashboard,  `${id}:dashboard:${cycle}`],
-    ];
-    let filled = 0;
-    for (const [payload, cacheKey] of fan) {
-      if (isUsable(payload)) { setCached(cacheKey, payload, base); filled += 1; }
-    }
-    if (!filled) bundleUnsupported.add(base);
-    return res;
-  })().finally(() => bundleInFlight.delete(key));
-
-  bundleInFlight.set(key, promise);
-  return promise;
-}
-
-// Is a bundle for this institute already running? Answered without needing the
-// fee cycle, so the hot path never waits on a Mongo lookup just to find out.
-function inflightBundleFor(id) {
-  const prefix = `${id}:__bundle:`;
-  for (const [k, p] of bundleInFlight.entries()) {
-    if (k.startsWith(prefix)) return p;
-  }
-  return null;
-}
-
-// One background bundle per institute per 30s. This is what makes the OTHER
-// tabs open instantly, without ever sitting in front of the page the user is
-// actually waiting for.
-const lastBundleWarm = new Map();
-const BUNDLE_WARM_THROTTLE_MS = 30 * 1000;
-
-function scheduleBundleWarm(id, base) {
-  if (!base || bundleUnsupported.has(base)) return;
-  if (Date.now() < (bundleCooldownUntil.get(base) || 0)) return;
-  if (inflightBundleFor(id)) return;
-  const now = Date.now();
-  if (now - (lastBundleWarm.get(id) || 0) < BUNDLE_WARM_THROTTLE_MS) return;
-  lastBundleWarm.set(id, now);
-  (async () => {
-    try {
-      await fetchBundle(id, base, await getFeeCycle(id));
-    } catch {
-      // A background warm must never surface to the user.
-    }
-  })();
-}
+// ─── WHY THERE IS NO BUNDLED CALL ────────────────────────────────
+// A bundled `getBundle` action used to live here: one execution filled all
+// seven cache keys. It has been removed on evidence, because it is fundamentally
+// incompatible with how Apps Script behaves:
+//
+//   * Aborting our HTTP request does NOT stop the script. Google runs it to
+//     completion regardless of whether anyone is still listening.
+//   * A web app deployed "execute as me" runs ONE execution at a time.
+//
+// So a bundle we had given up on still held the only execution slot, and
+// whatever the user did next queued behind a zombie and timed out too. Observed
+// twice in production logs: getBundle + getStudents timing out back to back,
+// and then getBundle + addStudent - where the student WAS written, after we had
+// already reported failure.
+//
+// The cheapest request is therefore also the safest: one small single-action
+// read for exactly the key that was asked for, which is the shape the fast
+// baseline had. Warmth comes from the cache TTL and from hover prefetch - never
+// from a long call parked in front of the user.
 
 async function cachedGet(cacheKey, url) {
   const entry = cacheEntry(cacheKey);
@@ -609,40 +533,11 @@ async function cachedGet(cacheKey, url) {
     return entry.data;
   }
 
-  // Cold miss (or invalidated by a save): the only path that waits.
-  //
-  // REGRESSION FIX. This used to `await fetchBundle(...)` here, so a page that
-  // needed ONE dataset waited for all seven. Against the pre-change baseline -
-  // one single-action call per page - that made every first paint and every
-  // post-save refetch several times slower. The bundle is still used, but only
-  // where it costs the user nothing.
-  const bundleBase = normaliseAppsScriptUrl(url);
-  const instituteId = String(cacheKey).split(':')[0];
-  const isBundleKey = String(cacheKey).includes(':__bundle:');
-
-  // If a bundle is ALREADY in flight (a save just invalidated everything, or
-  // another tab warmed it), join it rather than firing a second call. Google
-  // executes one instance of a script project at a time, so a competing
-  // single-action call would queue behind that bundle regardless.
-  if (!isBundleKey) {
-    const running = inflightBundleFor(instituteId);
-    if (running) {
-      try {
-        await running;
-        const filled = cacheEntry(cacheKey);
-        if (filled && filled.state === 'fresh') return filled.data;
-      } catch {
-        // Fall through to this key's own call.
-      }
-    }
-  }
-
+  // Cold miss (or invalidated by a save): the only path that waits, and it makes
+  // exactly ONE small upstream call, for exactly the key that was asked for.
   const data = await fetchUpstream(cacheKey, url);
   if (isUsable(data)) {
     setCached(cacheKey, data, url);
-    // The page the user asked for now has its data. Quietly fill the rest in a
-    // single execution so the next tab they open is instant.
-    if (!isBundleKey) scheduleBundleWarm(instituteId, bundleBase);
     return data;
   }
 
