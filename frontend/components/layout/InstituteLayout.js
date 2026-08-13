@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { clearAuth, getUser, handleDisplaced } from '../../lib/api';
-import api, { prefetch } from '../../lib/api';
+import api from '../../lib/api';
 import LiquidDock from '../ui/LiquidDock';
 import DesignSystem from '../ds/DesignSystem';
 
@@ -34,29 +34,20 @@ const NAV = [
 // 1-3s Apps Script + Sheets read. Purely additive - no endpoint, route or
 // auth behaviour changes, and every call is a plain GET the page would have
 // made anyway a moment later.
-const WARM = {
-  '/institute/dashboard':  ['/api/sheets/dashboard-summary'],
-  '/institute/students':   ['/api/sheets/students'],
-  '/institute/attendance': ['/api/sheets/students'],
-  '/institute/fees':       ['/api/sheets/fees', '/api/sheets/students'],
-  '/institute/enquiries':  ['/api/sheets/enquiries'],
-  '/institute/batches':    ['/api/sheets/batches', '/api/sheets/schedule', '/api/sheets/students'],
-};
-
-// Don't re-warm the same endpoint on every navigation.
-const WARM_THROTTLE_MS = 45 * 1000;
-const lastWarm = new Map();
-
-const warmUrl = (url) => {
-  const previous = lastWarm.get(url) || 0;
-  if (Date.now() - previous < WARM_THROTTLE_MS) return;
-  lastWarm.set(url, Date.now());
-  prefetch(url);
-};
-
-// Fires on hover (desktop) and on touch-down (mobile), which buys 100-300ms
-// of head start before the tap even registers as a navigation.
-const warmFor = (href) => (WARM[href] || []).forEach(warmUrl);
+// Hover prefetching has been REMOVED, deliberately.
+//
+// warmFor() fired a real GET for every nav item the pointer merely passed over
+// (batches alone asked for three URLs). Google runs ONE execution of a script
+// project at a time, so moving the mouse from Home down to Enquiries could queue
+// eight speculative reads IN FRONT of the page the user actually clicked. That
+// is the reported symptom precisely: every page in a dashboard -> students ->
+// fees -> enquiries walk was slower than the one before it, and the dashboard -
+// the most expensive read of the seven - timed out at the back of the queue.
+//
+// It bought roughly 300ms of head start against a 1-3s read, so it was never a
+// good trade on this upstream. The hook is kept as a no-op so the dock's wiring
+// and props are untouched; warmth comes from the backend cache instead.
+const warmFor = () => {};
 
 export default function InstituteLayout({ children, title }) {
   const router = useRouter();
@@ -104,9 +95,9 @@ export default function InstituteLayout({ children, title }) {
   // the user's own refetch sat behind all of it - which is how a student save
   // reached the 30s client timeout.
   //
-  // Targeted prefetching is kept instead: warmFor() still runs on hover and
-  // touch-down (below), so it only fetches what the user is about to open, and
-  // only one tab's worth of data.
+  // Speculative prefetching is now gone entirely (see warmFor above). On an
+  // upstream that runs one execution at a time, any read we start that the user
+  // did not ask for is a read their next click has to wait behind.
 
   return (
     <div className="app-shell sc-app" style={{

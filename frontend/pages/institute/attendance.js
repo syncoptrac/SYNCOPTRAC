@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import InstituteLayout from '../../components/layout/InstituteLayout';
-import api, { getUser, prefetch, notifyError, errorMessage } from '../../lib/api';
+import api, { getUser, notifyError, errorMessage } from '../../lib/api';
 import toast from 'react-hot-toast';
 import { T } from '../../components/ds/tokens';
 
@@ -48,9 +48,11 @@ export default function AttendancePage() {
     const user = getUser();
     if (!user || user.role !== 'institute') { router.push('/institute/login'); return; }
     fetchStudents();
-    // PERF: warm today's records in the background so opening the History tab
-    // is instant instead of triggering a fresh Sheets read on click.
-    prefetch(`/api/sheets/attendance?date=${getTodayIST()}`);
+    // Speculative read REMOVED. This fired a FULL attendance read on every visit
+    // to warm a History tab the user may never open - and Attendance is the
+    // largest sheet in the app. Google runs one execution of a script project at
+    // a time, so that unrequested read delayed whatever the user did next. The
+    // History tab fetches on demand instead: one call, only when it is opened.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

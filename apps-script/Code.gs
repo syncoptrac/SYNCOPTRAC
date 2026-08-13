@@ -1016,19 +1016,34 @@ function getBundle(cycle, date) {
 // touches only the Date and Status columns and allocates nothing per row.
 // Identical semantics to the filter it replaces - toISO on the stored value,
 // case-insensitive status match.
+// Rows for today are only ever APPENDED, so they are always at the end of the
+// sheet. Reading the whole sheet to count them made getDashboardSummary the most
+// expensive call in the app, and made it worse every day the institute took
+// attendance. Only the tail is read now, so the cost is flat no matter how many
+// years of history the sheet holds.
+// The window is deliberately generous: 5000 rows is well over a year of daily
+// attendance for an institute of this size, and only the Date and Status of
+// today's rows are inspected. Nothing is written and no history is touched.
+var ATTENDANCE_TAIL_ROWS = 5000;
+
 function attendanceTodayCounts_() {
   var out = { present: 0, absent: 0 };
-  var data = sheetData_(getSheet(SHEETS.ATTENDANCE));
-  if (!data || data.length < 2) return out;
-  var headers = data[0];
+  var sheet = getSheet(SHEETS.ATTENDANCE);
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 1) return out;
+
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   var dateIdx = headers.indexOf('Date');
   var statusIdx = headers.indexOf('Status');
   if (dateIdx === -1 || statusIdx === -1) return out;
+
+  var start = Math.max(2, lastRow - ATTENDANCE_TAIL_ROWS + 1);
+  var rows = sheet.getRange(start, 1, lastRow - start + 1, lastCol).getValues();
   var today = todayISO();
-  for (var r = 1; r < data.length; r++) {
-    var row = data[r];
-    if (toISO(row[dateIdx]) !== today) continue;
-    var st = String(row[statusIdx]).toLowerCase();
+  for (var r = 0; r < rows.length; r++) {
+    if (toISO(rows[r][dateIdx]) !== today) continue;
+    var st = String(rows[r][statusIdx]).toLowerCase();
     if (st === 'present') out.present += 1;
     else if (st === 'absent') out.absent += 1;
   }
