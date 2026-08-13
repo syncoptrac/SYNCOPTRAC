@@ -286,7 +286,7 @@ export default function StudentsPage() {
                 <tbody>
                   {filtered.map((s, i) => (
                     <tr key={s.StudentID} className="row" style={{ animationDelay: `${Math.min(i, 12) * 28}ms` }}>
-                      <td><span className="idchip">{s.StudentID}</span></td>
+                      <td><span className="idchip">{i + 1}</span></td>
                       <td>
                         <div className="who">
                           <span className="av" style={{ background: tintFor(s.StudentName) }}>
@@ -335,7 +335,7 @@ export default function StudentsPage() {
                     <p className="scard-n">{s.StudentName}</p>
                     <span className="sc-badge course">{s.Course}</span>
                   </div>
-                  <span className="idchip">{s.StudentID}</span>
+                  <span className="idchip">{i + 1}</span>
                 </div>
 
                 <div className="scard-grid">

@@ -134,7 +134,10 @@ function doPost(e) {
   // saves could otherwise clobber each other's rows. tryLock never fails the
   // request - if the lock cannot be taken we still proceed, exactly as before.
   var lock = null;
-  try { lock = LockService.getScriptLock(); lock.tryLock(20000); } catch (lockErr) { lock = null; }
+  // 8s, NOT 20s: the backend aborts the request at 20s, so a 20s lock wait
+  // could burn the whole budget and return nothing at all. Waiting less
+  // guarantees there is still time to do the work and answer with JSON.
+  try { lock = LockService.getScriptLock(); lock.tryLock(8000); } catch (lockErr) { lock = null; }
   try {
     const body = JSON.parse(e.postData.contents);
     let result;
@@ -657,10 +660,22 @@ function deleteStudent(studentId) {
   if (rowIndex === -1) return { success: false, error: 'Student not found' };
   sheet.deleteRow(rowIndex);
 
-  // Also remove from Fees sheet so deleted students don't ghost in fee records
+  // Also remove from Fees so deleted students don't ghost in fee records.
+  // BUG: findRowByField returns only the FIRST match, but a student holds one
+  // fee row PER BILLING CYCLE (see the Period / CycleStart columns). Every
+  // later cycle was therefore left behind pointing at a StudentID that no
+  // longer exists - precisely the ghosting this block exists to prevent. One
+  // rewrite removes them all, and is faster than repeated deleteRow calls.
   const feesSheet = getSheet(SHEETS.FEES);
-  const feesRow = findRowByField(feesSheet, 'StudentID', studentId);
-  if (feesRow !== -1) feesSheet.deleteRow(feesRow);
+  const feeData = sheetData_(feesSheet);
+  const fSidCol = feeData[0].indexOf('StudentID');
+  if (fSidCol !== -1) {
+    const keptFees = [];
+    for (let i = 1; i < feeData.length; i++) {
+      if (String(feeData[i][fSidCol]) !== String(studentId)) keptFees.push(feeData[i]);
+    }
+    if (keptFees.length !== feeData.length - 1) rewriteRows_(feesSheet, keptFees);
+  }
 
   // Also remove attendance records for this student
   const attendanceSheet = getSheet(SHEETS.ATTENDANCE);

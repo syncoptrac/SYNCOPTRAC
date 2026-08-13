@@ -360,15 +360,30 @@ function breakerRecord(key, code, ok) {
 // Sending them one at a time per endpoint removes both. It is not slower in
 // practice: repeat reads are answered by CacheService in ~10ms, and the backend
 // cache means a warm page makes no upstream call at all.
-const chains = new Map();           // endpoint -> tail of its promise chain
+// One lane per endpoint. Writes are queued AHEAD of reads: a read can always
+// fall back on cached / last-known-good data, but a save or a delete that never
+// reaches Google is a silent loss of the user's action.
+const lanes = new Map();            // endpoint -> { busy, waiters: [] }
 
-function serialise(key, task) {
-  const prev = chains.get(key) || Promise.resolve();
-  const next = prev.then(task, task);
-  // Park a settled, value-free promise as the new tail so the chain cannot grow
-  // without bound or pin previous responses in memory.
-  chains.set(key, next.then(() => {}, () => {}));
-  return next;
+function serialise(key, task, priority = false) {
+  let lane = lanes.get(key);
+  if (!lane) { lane = { busy: false, waiters: [] }; lanes.set(key, lane); }
+  return new Promise((resolve, reject) => {
+    const job = { task, resolve, reject };
+    if (priority) lane.waiters.unshift(job); else lane.waiters.push(job);
+    pump(lane);
+  });
+}
+
+function pump(lane) {
+  if (lane.busy) return;
+  const job = lane.waiters.shift();
+  if (!job) return;
+  lane.busy = true;
+  Promise.resolve()
+    .then(job.task)
+    .then(job.resolve, job.reject)
+    .finally(() => { lane.busy = false; pump(lane); });
 }
 
 async function proxyToAppsScript(rawUrl, method = 'GET', body = null) {
@@ -400,6 +415,8 @@ async function proxyToAppsScript(rawUrl, method = 'GET', body = null) {
     };
   }
 
+  // Writes get priority in the lane and are never dropped unsent.
+  const isWrite = method !== 'GET';
   const deadline = Date.now() + UPSTREAM_TOTAL_BUDGET_MS;
   let last = null;
 
@@ -412,11 +429,15 @@ async function proxyToAppsScript(rawUrl, method = 'GET', body = null) {
     // entirely so cachedGet can serve last-known-good data instead.
     last = await serialise(base, () => {
       const left = deadline - Date.now();
-      if (left < 1500) {
-        return { ok: false, code: 'TIMEOUT', status: 0, contentType: '', finalUrl: url };
+      // Reads may be abandoned before sending - cachedGet still has last-known
+      // -good data to serve, and `notSent` proves nothing reached the sheet.
+      if (!isWrite && left < 1500) {
+        return { ok: false, code: 'TIMEOUT', status: 0, contentType: '', finalUrl: url, notSent: true };
       }
-      return attemptAppsScript(url, method, body, left);
-    });
+      // A write always gets a real attempt window, measured from the moment its
+      // turn actually begins rather than from when it joined the queue.
+      return attemptAppsScript(url, method, body, isWrite ? Math.max(12000, left) : left);
+    }, isWrite);
     if (last.ok) { breakerRecord(base, null, true); return last.data; }
     if (!RETRYABLE.has(last.code)) break;
     // A write is NOT replayed — Apps Script may already have committed the row,
@@ -434,6 +455,9 @@ async function proxyToAppsScript(rawUrl, method = 'GET', body = null) {
     `method=${method}`,
     `action=${action ? action[1] : (body && body.action) || 'n/a'}`,
     `httpStatus=${last ? last.status : 0}`,
+    // For a write this is the difference between 'definitely did not happen'
+    // and 'may have been committed before we gave up'.
+    `sent=${last && last.notSent ? 'no' : 'yes'}`,
     `contentType=${last ? (last.contentType || 'n/a') : 'n/a'}`,
     `endpoint=${safeUrlLabel(base)}`,
     `finalHost=${last && last.finalUrl ? (() => { try { return new URL(last.finalUrl).host; } catch { return 'n/a'; } })() : 'n/a'}`,
