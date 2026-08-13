@@ -68,7 +68,11 @@ export default function InstituteLayout({ children, title }) {
     window.location.href = '/institute/login';
   };
 
-  // Poll every 4 seconds — forces logout the moment someone else logs in
+  // Poll for session displacement. This ran every 4 SECONDS, i.e. 900 requests
+  // per hour per open tab, each one a MongoDB lookup - which by itself consumed
+  // the backend's entire rate-limit allowance and then made every other request
+  // fail with 429. 15s keeps displacement detection effectively immediate from a
+  // human perspective at a quarter of the cost.
   useEffect(() => {
     let alive = true;
 
@@ -87,7 +91,7 @@ export default function InstituteLayout({ children, title }) {
     };
 
     checkSession();
-    const timer = setInterval(checkSession, 4000);
+    const timer = setInterval(checkSession, 15000);
     return () => { alive = false; clearInterval(timer); };
   }, []);
 

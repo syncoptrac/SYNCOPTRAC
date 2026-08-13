@@ -121,6 +121,30 @@ router.get('/verify', async (req, res) => {
       return res.json({ valid: true, user: decoded });
     }
 
+    // BUGFIX: this returned valid:true for ANY signature-valid token, so a
+    // DEACTIVATED institute - or one whose session had been displaced by a login
+    // on another device - stayed logged in until the 7-day token expired.
+    // Mirrors the checks /api/auth/verify-session already performs.
+    if (decoded.role === 'institute' && decoded.id) {
+      if (!decoded.sessionId) {
+        return res.status(401).json({ valid: false, error: 'SESSION_DISPLACED' });
+      }
+      let institute;
+      try {
+        institute = await Institute.findById(decoded.id)
+          .select('currentSessionId isActive')
+          .lean();
+      } catch {
+        // If the database is briefly unreachable, do NOT mass-log-out every
+        // user. Real enforcement still happens in requireInstitute on each
+        // data request; this endpoint is only a soft check.
+        return res.json({ valid: true, user: decoded });
+      }
+      if (!institute || !institute.isActive || institute.currentSessionId !== decoded.sessionId) {
+        return res.status(401).json({ valid: false, error: 'SESSION_DISPLACED' });
+      }
+    }
+
     res.json({ valid: true, user: decoded });
   } catch {
     res.status(401).json({ valid: false });

@@ -94,17 +94,21 @@ export default function AdminDashboard() {
   };
 
   const fetchData = async () => {
-    try {
-      const [statsRes, instRes] = await Promise.all([
-        api.get('/api/admin/dashboard'),
-        api.get('/api/admin/institutes'),
-      ]);
-      setStats(statsRes.data);
-      setInstitutes(instRes.data.slice(0, 5));
-    } catch (e) {
-      console.error(e);
+    // Promise.all rejects as soon as EITHER request fails, so a single failing
+    // endpoint blanked the whole dashboard and showed the offline banner even
+    // though the other half of the data had arrived fine. Each result is now
+    // applied independently; the banner appears only if BOTH actually failed.
+    const [statsRes, instRes] = await Promise.allSettled([
+      api.get('/api/admin/dashboard'),
+      api.get('/api/admin/institutes'),
+    ]);
+    if (statsRes.status === 'fulfilled') setStats(statsRes.value.data);
+    if (instRes.status === 'fulfilled') setInstitutes((instRes.value.data || []).slice(0, 5));
+    if (statsRes.status === 'rejected' && instRes.status === 'rejected') {
+      console.error(statsRes.reason);
       setDbOffline(true);
-    } finally { setLoading(false); }
+    }
+    setLoading(false);
   };
 
   const fmt = (n) => n?.toLocaleString('en-IN') ?? '\u2014';

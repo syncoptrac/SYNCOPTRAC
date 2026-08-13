@@ -36,6 +36,15 @@ function postJson(hostname, path, headers, bodyObj) {
   });
 }
 
+// SECURITY: lead fields are attacker-controlled (public form) and were
+// interpolated raw into the notification email's HTML. Escaping prevents markup
+// or script from being injected into the admin's inbox.
+function esc(v) {
+  return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[c]);
+}
+
 // ─── Helper: send new-lead notification via Brevo HTTP API ───────────────
 async function sendLeadEmail(lead) {
   if (!process.env.BREVO_API_KEY || !process.env.ADMIN_EMAIL) {
@@ -55,31 +64,31 @@ async function sendLeadEmail(lead) {
           <table style="border-collapse:collapse;width:100%;font-size:14px">
             <tr style="background:#f9f9f9">
               <td style="padding:10px 12px;border:1px solid #eee;font-weight:600;width:40%">Institute Name</td>
-              <td style="padding:10px 12px;border:1px solid #eee">${lead.instituteName}</td>
+              <td style="padding:10px 12px;border:1px solid #eee">${esc(lead.instituteName)}</td>
             </tr>
             <tr>
               <td style="padding:10px 12px;border:1px solid #eee;font-weight:600">Owner Name</td>
-              <td style="padding:10px 12px;border:1px solid #eee">${lead.ownerName}</td>
+              <td style="padding:10px 12px;border:1px solid #eee">${esc(lead.ownerName)}</td>
             </tr>
             <tr style="background:#f9f9f9">
               <td style="padding:10px 12px;border:1px solid #eee;font-weight:600">Phone</td>
-              <td style="padding:10px 12px;border:1px solid #eee">${lead.phone}</td>
+              <td style="padding:10px 12px;border:1px solid #eee">${esc(lead.phone)}</td>
             </tr>
             <tr>
               <td style="padding:10px 12px;border:1px solid #eee;font-weight:600">Email</td>
-              <td style="padding:10px 12px;border:1px solid #eee">${lead.email}</td>
+              <td style="padding:10px 12px;border:1px solid #eee">${esc(lead.email)}</td>
             </tr>
             <tr style="background:#f9f9f9">
               <td style="padding:10px 12px;border:1px solid #eee;font-weight:600">Institute Type</td>
-              <td style="padding:10px 12px;border:1px solid #eee">${lead.instituteType || 'Not specified'}</td>
+              <td style="padding:10px 12px;border:1px solid #eee">${esc(lead.instituteType || 'Not specified')}</td>
             </tr>
             <tr>
               <td style="padding:10px 12px;border:1px solid #eee;font-weight:600">Number of Students</td>
-              <td style="padding:10px 12px;border:1px solid #eee">${lead.numberOfStudents || 'Not specified'}</td>
+              <td style="padding:10px 12px;border:1px solid #eee">${esc(lead.numberOfStudents || 'Not specified')}</td>
             </tr>
             <tr style="background:#f9f9f9">
               <td style="padding:10px 12px;border:1px solid #eee;font-weight:600">Message</td>
-              <td style="padding:10px 12px;border:1px solid #eee">${lead.message || 'None'}</td>
+              <td style="padding:10px 12px;border:1px solid #eee">${esc(lead.message || 'None')}</td>
             </tr>
             <tr>
               <td style="padding:10px 12px;border:1px solid #eee;font-weight:600">Submitted At</td>

@@ -17,8 +17,13 @@ router.get('/profile', requireInstitute, async (req, res) => {
 // PATCH /api/institute/update-students
 router.patch('/update-students', requireInstitute, async (req, res) => {
   try {
-    const { totalStudents } = req.body;
-    await Institute.findByIdAndUpdate(req.user.id, { totalStudents });
+    // An unvalidated body value went straight to Mongoose, so a non-numeric
+    // payload produced a CastError that surfaced as a generic 500.
+    const n = Number(req.body.totalStudents);
+    if (!Number.isFinite(n) || n < 0) {
+      return res.status(400).json({ error: 'totalStudents must be a non-negative number' });
+    }
+    await Institute.findByIdAndUpdate(req.user.id, { totalStudents: Math.floor(n) });
     res.json({ message: 'Updated' });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });

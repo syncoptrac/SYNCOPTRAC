@@ -22,23 +22,46 @@ const Institute = require('../models/Institute');
 // database round trip in front of the (already slow) Sheets read. The cycle
 // changes very rarely, so it is memoised per institute for 60s. A change made
 // in Settings is picked up within a minute, and the fee maths is unchanged.
-const feeCycleCache = new Map();
-const FEE_CYCLE_TTL = 60 * 1000;
+// BUGFIX (stale Apps Script deployment URL): appsScriptUrl was read out of the
+// JWT, which is signed at login and valid for SEVEN DAYS. When the deployment
+// URL was changed in the admin panel, every already-signed-in institute kept
+// calling the OLD, now-deleted deployment until it happened to log out and back
+// in - producing exactly the 404 "deployment no longer exists" responses. The
+// fee cycle was already moved out of the JWT for this same reason; the URL was
+// left behind. Both fields are now read from MongoDB in ONE memoised query, so
+// this costs no extra database round trip versus the previous code.
+const instituteConfigCache = new Map();
+const INSTITUTE_CONFIG_TTL = 60 * 1000;
 
-async function getFeeCycle(instituteId) {
+async function getInstituteConfig(instituteId) {
   const key = String(instituteId);
-  const hit = feeCycleCache.get(key);
-  if (hit && Date.now() - hit.ts < FEE_CYCLE_TTL) return hit.value;
+  const hit = instituteConfigCache.get(key);
+  if (hit && Date.now() - hit.ts < INSTITUTE_CONFIG_TTL) return hit.value;
   try {
     const inst = await Institute.findById(instituteId)
-      .select('feeCollectionCycle')
+      .select('feeCollectionCycle appsScriptUrl')
       .lean();
-    const value = (inst && inst.feeCollectionCycle) || 'monthly';
-    feeCycleCache.set(key, { value, ts: Date.now() });
+    const value = {
+      feeCycle: (inst && inst.feeCollectionCycle) || 'monthly',
+      appsScriptUrl: (inst && inst.appsScriptUrl) || '',
+    };
+    instituteConfigCache.set(key, { value, ts: Date.now() });
     return value;
   } catch {
-    return (hit && hit.value) || 'monthly';
+    // Database unreachable: reuse the last known config rather than failing.
+    return (hit && hit.value) || { feeCycle: 'monthly', appsScriptUrl: '' };
   }
+}
+
+async function getFeeCycle(instituteId) {
+  return (await getInstituteConfig(instituteId)).feeCycle;
+}
+
+// The JWT value is kept only as a last-resort fallback, so a database outage
+// degrades to the old behaviour instead of breaking every request.
+async function resolveAppsScriptUrl(user) {
+  const cfg = await getInstituteConfig(user.id);
+  return cfg.appsScriptUrl || user.appsScriptUrl || '';
 }
 
 // ─── IN-MEMORY CACHE (stale-while-revalidate) ─────────────────────────────────────────
@@ -583,7 +606,8 @@ async function cachedGet(cacheKey, url) {
 
 router.get('/students', requireInstitute, async (req, res) => {
   try {
-    const { appsScriptUrl, id } = req.user;
+    const id = req.user.id;
+    const appsScriptUrl = await resolveAppsScriptUrl(req.user);
     const data = await cachedGet(`${id}:students`, `${appsScriptUrl}?action=getStudents`);
     respond(res, data);
   } catch (err) {
@@ -594,7 +618,8 @@ router.get('/students', requireInstitute, async (req, res) => {
 
 router.post('/students', requireInstitute, async (req, res) => {
   try {
-    const { appsScriptUrl, id } = req.user;
+    const id = req.user.id;
+    const appsScriptUrl = await resolveAppsScriptUrl(req.user);
     const cycle = await getFeeCycle(id);
     const data = await proxyToAppsScript(appsScriptUrl, 'POST', { action: 'addStudent', cycle, ...req.body });
     bustCache(id);
@@ -607,7 +632,8 @@ router.post('/students', requireInstitute, async (req, res) => {
 
 router.put('/students/:sid', requireInstitute, async (req, res) => {
   try {
-    const { appsScriptUrl, id } = req.user;
+    const id = req.user.id;
+    const appsScriptUrl = await resolveAppsScriptUrl(req.user);
     // ONE upstream call. Apps Script returns the saved row (and how many Fees /
     // Attendance identity cells it synced), so the frontend can update just
     // that student in state instead of refetching the whole list.
@@ -624,7 +650,8 @@ router.put('/students/:sid', requireInstitute, async (req, res) => {
 
 router.delete('/students/:sid', requireInstitute, async (req, res) => {
   try {
-    const { appsScriptUrl, id } = req.user;
+    const id = req.user.id;
+    const appsScriptUrl = await resolveAppsScriptUrl(req.user);
     const data = await proxyToAppsScript(appsScriptUrl, 'POST', {
       action: 'deleteStudent', studentId: req.params.sid
     });
@@ -641,7 +668,8 @@ router.delete('/students/:sid', requireInstitute, async (req, res) => {
 router.get('/attendance', requireInstitute, async (req, res) => {
   try {
     const { date, studentId } = req.query;
-    const { appsScriptUrl, id } = req.user;
+    const id = req.user.id;
+    const appsScriptUrl = await resolveAppsScriptUrl(req.user);
     let url = `${appsScriptUrl}?action=getAttendance`;
     if (date) url += `&date=${date}`;
     if (studentId) url += `&studentId=${studentId}`;
@@ -656,7 +684,8 @@ router.get('/attendance', requireInstitute, async (req, res) => {
 
 router.post('/attendance', requireInstitute, async (req, res) => {
   try {
-    const { appsScriptUrl, id } = req.user;
+    const id = req.user.id;
+    const appsScriptUrl = await resolveAppsScriptUrl(req.user);
     const data = await proxyToAppsScript(appsScriptUrl, 'POST', {
       action: 'markAttendance', ...req.body
     });
@@ -672,7 +701,8 @@ router.post('/attendance', requireInstitute, async (req, res) => {
 
 router.get('/fees', requireInstitute, async (req, res) => {
   try {
-    const { appsScriptUrl, id } = req.user;
+    const id = req.user.id;
+    const appsScriptUrl = await resolveAppsScriptUrl(req.user);
     const cycle = await getFeeCycle(id);
     // Cache key includes the cycle so a settings change is reflected immediately
     // instead of serving a stale 30s-cached response computed under the old cycle.
@@ -686,7 +716,8 @@ router.get('/fees', requireInstitute, async (req, res) => {
 
 router.put('/fees/:studentId', requireInstitute, async (req, res) => {
   try {
-    const { appsScriptUrl, id } = req.user;
+    const id = req.user.id;
+    const appsScriptUrl = await resolveAppsScriptUrl(req.user);
     const cycle = await getFeeCycle(id);
     const data = await proxyToAppsScript(appsScriptUrl, 'POST', {
       action: 'updateFees', studentId: req.params.studentId, cycle, ...req.body
@@ -703,7 +734,8 @@ router.put('/fees/:studentId', requireInstitute, async (req, res) => {
 
 router.get('/enquiries', requireInstitute, async (req, res) => {
   try {
-    const { appsScriptUrl, id } = req.user;
+    const id = req.user.id;
+    const appsScriptUrl = await resolveAppsScriptUrl(req.user);
     const data = await cachedGet(`${id}:enquiries`, `${appsScriptUrl}?action=getEnquiries`);
     respond(res, data);
   } catch (err) {
@@ -714,7 +746,8 @@ router.get('/enquiries', requireInstitute, async (req, res) => {
 
 router.post('/enquiries', requireInstitute, async (req, res) => {
   try {
-    const { appsScriptUrl, id } = req.user;
+    const id = req.user.id;
+    const appsScriptUrl = await resolveAppsScriptUrl(req.user);
     const data = await proxyToAppsScript(appsScriptUrl, 'POST', { action: 'addEnquiry', ...req.body });
     bustCache(id);
     respond(res, data);
@@ -726,7 +759,8 @@ router.post('/enquiries', requireInstitute, async (req, res) => {
 
 router.put('/enquiries/:eid', requireInstitute, async (req, res) => {
   try {
-    const { appsScriptUrl, id } = req.user;
+    const id = req.user.id;
+    const appsScriptUrl = await resolveAppsScriptUrl(req.user);
     const data = await proxyToAppsScript(appsScriptUrl, 'POST', {
       action: 'updateEnquiry', enquiryId: req.params.eid, ...req.body
     });
@@ -742,7 +776,8 @@ router.put('/enquiries/:eid', requireInstitute, async (req, res) => {
 
 router.post('/send-email', requireInstitute, async (req, res) => {
   try {
-    const { appsScriptUrl, instituteName, phone, contactNumber } = req.user;
+    const { instituteName, phone, contactNumber } = req.user;
+    const appsScriptUrl = await resolveAppsScriptUrl(req.user);
     const { type, to, name, studentName, dueDate, course } = req.body;
     const data = await proxyToAppsScript(appsScriptUrl, 'POST', {
       action: 'sendEmail',
@@ -761,7 +796,8 @@ router.post('/send-email', requireInstitute, async (req, res) => {
 
 router.get('/dashboard-summary', requireInstitute, async (req, res) => {
   try {
-    const { appsScriptUrl, id } = req.user;
+    const id = req.user.id;
+    const appsScriptUrl = await resolveAppsScriptUrl(req.user);
     const cycle = await getFeeCycle(id);
     // Cache key includes the cycle (and, implicitly via the 30s TTL, today's
     // date) so a fee status that just rolled over from Paid to Unpaid is
@@ -778,7 +814,8 @@ router.get('/dashboard-summary', requireInstitute, async (req, res) => {
 
 router.get('/batches', requireInstitute, async (req, res) => {
   try {
-    const { appsScriptUrl, id } = req.user;
+    const id = req.user.id;
+    const appsScriptUrl = await resolveAppsScriptUrl(req.user);
     const data = await cachedGet(`${id}:batches`, `${appsScriptUrl}?action=getBatches`);
     respond(res, data);
   } catch (err) {
@@ -789,7 +826,8 @@ router.get('/batches', requireInstitute, async (req, res) => {
 
 router.post('/batches', requireInstitute, async (req, res) => {
   try {
-    const { appsScriptUrl, id } = req.user;
+    const id = req.user.id;
+    const appsScriptUrl = await resolveAppsScriptUrl(req.user);
     const data = await proxyToAppsScript(appsScriptUrl, 'POST', { action: 'addBatch', ...req.body });
     bustCache(id);
     respond(res, data);
@@ -801,7 +839,8 @@ router.post('/batches', requireInstitute, async (req, res) => {
 
 router.put('/batches/:bid', requireInstitute, async (req, res) => {
   try {
-    const { appsScriptUrl, id } = req.user;
+    const id = req.user.id;
+    const appsScriptUrl = await resolveAppsScriptUrl(req.user);
     const data = await proxyToAppsScript(appsScriptUrl, 'POST', {
       action: 'updateBatch', batchId: req.params.bid, ...req.body
     });
@@ -815,7 +854,8 @@ router.put('/batches/:bid', requireInstitute, async (req, res) => {
 
 router.put('/batches/:bid/students', requireInstitute, async (req, res) => {
   try {
-    const { appsScriptUrl, id } = req.user;
+    const id = req.user.id;
+    const appsScriptUrl = await resolveAppsScriptUrl(req.user);
     const data = await proxyToAppsScript(appsScriptUrl, 'POST', {
       action: 'assignStudents', batchId: req.params.bid, students: req.body.students
     });
@@ -829,7 +869,8 @@ router.put('/batches/:bid/students', requireInstitute, async (req, res) => {
 
 router.delete('/batches/:bid', requireInstitute, async (req, res) => {
   try {
-    const { appsScriptUrl, id } = req.user;
+    const id = req.user.id;
+    const appsScriptUrl = await resolveAppsScriptUrl(req.user);
     const data = await proxyToAppsScript(appsScriptUrl, 'POST', {
       action: 'deleteBatch', batchId: req.params.bid
     });
@@ -845,7 +886,8 @@ router.delete('/batches/:bid', requireInstitute, async (req, res) => {
 
 router.get('/schedule', requireInstitute, async (req, res) => {
   try {
-    const { appsScriptUrl, id } = req.user;
+    const id = req.user.id;
+    const appsScriptUrl = await resolveAppsScriptUrl(req.user);
     const data = await cachedGet(`${id}:schedule`, `${appsScriptUrl}?action=getSchedule`);
     respond(res, data);
   } catch (err) {
@@ -856,7 +898,8 @@ router.get('/schedule', requireInstitute, async (req, res) => {
 
 router.post('/schedule', requireInstitute, async (req, res) => {
   try {
-    const { appsScriptUrl, id } = req.user;
+    const id = req.user.id;
+    const appsScriptUrl = await resolveAppsScriptUrl(req.user);
     const data = await proxyToAppsScript(appsScriptUrl, 'POST', { action: 'addSlot', ...req.body });
     bustCache(id);
     respond(res, data);
@@ -868,7 +911,8 @@ router.post('/schedule', requireInstitute, async (req, res) => {
 
 router.put('/schedule/:sid', requireInstitute, async (req, res) => {
   try {
-    const { appsScriptUrl, id } = req.user;
+    const id = req.user.id;
+    const appsScriptUrl = await resolveAppsScriptUrl(req.user);
     const data = await proxyToAppsScript(appsScriptUrl, 'POST', {
       action: 'updateSlot', slotId: req.params.sid, ...req.body
     });
@@ -882,7 +926,8 @@ router.put('/schedule/:sid', requireInstitute, async (req, res) => {
 
 router.delete('/schedule/:sid', requireInstitute, async (req, res) => {
   try {
-    const { appsScriptUrl, id } = req.user;
+    const id = req.user.id;
+    const appsScriptUrl = await resolveAppsScriptUrl(req.user);
     const data = await proxyToAppsScript(appsScriptUrl, 'POST', {
       action: 'deleteSlot', slotId: req.params.sid
     });
@@ -899,7 +944,7 @@ router.delete('/schedule/:sid', requireInstitute, async (req, res) => {
 // Reports the exact facts needed to diagnose an HTML response, with the
 // deployment id masked so the capability URL is never exposed.
 router.get('/apps-script-health', requireInstitute, async (req, res) => {
-  const { appsScriptUrl } = req.user;
+  const appsScriptUrl = await resolveAppsScriptUrl(req.user);
   const base = normaliseAppsScriptUrl(appsScriptUrl);
   const urlClass = classifyAppsScriptUrl(base);
   const report = {

@@ -25,10 +25,20 @@ async function memo(key, producer) {
   return value;
 }
 
+// BUGFIX (stale data right after an admin change): the cache was cleared
+// BEFORE the write executed. A GET arriving in that window re-populated the
+// cache from pre-write data and pinned it for the full TTL. Clearing once the
+// response has actually finished removes the race window entirely.
 router.use((req, res, next) => {
-  if (req.method !== 'GET') adminCache.clear();
+  if (req.method !== 'GET') {
+    res.on('finish', () => adminCache.clear());
+  }
   next();
 });
+
+// A malformed :id previously reached Mongoose and threw a CastError, which the
+// catch blocks reported as a generic 500 "Server error" instead of 404.
+const isObjectId = (v) => /^[a-f\d]{24}$/i.test(String(v || ''));
 
 // Generate unique login ID
 function generateLoginId(instituteName) {
@@ -58,9 +68,18 @@ router.get('/revenue', requireAdmin, async (req, res) => {
       end   = new Date(now.getFullYear(), now.getMonth() + 1, 1);
     }
     // PERF: .lean() skips Mongoose document hydration - plain objects only.
+    // BUGFIX (wrong monthly revenue): this filtered on updatedAt, which the
+    // Institute pre-save hook bumps on EVERY change - so merely editing a phone
+    // number moved that institute into the current month's revenue.
+    // lastPaymentDate is the real payment date. Legacy records that never
+    // recorded one fall back to updatedAt so historical figures do not drop.
     const institutes = await Institute.find({
       paymentStatus: 'paid',
-      updatedAt: { $gte: start, $lt: end },
+      $or: [
+        { lastPaymentDate: { $gte: start, $lt: end } },
+        { lastPaymentDate: null, updatedAt: { $gte: start, $lt: end } },
+        { lastPaymentDate: { $exists: false }, updatedAt: { $gte: start, $lt: end } },
+      ],
     }, 'planAmount').lean();
     const revenue = institutes.reduce((s, i) => s + (i.planAmount || 0), 0);
     res.json({ revenue, paidCount: institutes.length, month });
@@ -191,17 +210,38 @@ router.post('/institutes', requireAdmin, [
 // PUT /api/admin/institutes/:id
 router.put('/institutes/:id', requireAdmin, async (req, res) => {
   try {
-    const updates = req.body;
-    delete updates.password; // Don't update password through this route
-    delete updates.loginId;  // Don't change loginId
+    if (!isObjectId(req.params.id)) {
+      return res.status(404).json({ error: 'Institute not found' });
+    }
+
+    // SECURITY: this used to assign the ENTIRE request body after deleting only
+    // password and loginId. Everything else was writable - including
+    // currentSessionId (which silently logged the institute out) and email
+    // (whose unique index turned a typo into a 500). Now an explicit whitelist,
+    // matching the PATCH route below.
+    const editable = [
+      'instituteName', 'ownerName', 'email', 'phone', 'instituteType',
+      'googleSheetId', 'appsScriptUrl', 'planAmount', 'paymentStatus',
+      'dueDate', 'billingDay', 'numberOfStudents', 'feeCollectionCycle',
+      'isActive', 'totalStudents',
+    ];
+    const updates = {};
+    editable.forEach((k) => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
+
     if (updates.billingDay !== undefined) {
       updates.billingDay = Math.min(Math.max(parseInt(updates.billingDay, 10) || 1, 1), 31);
+    }
+    // Record when an institute actually became paid, so revenue reporting has a
+    // real payment date to filter on instead of inferring one from updatedAt.
+    if (updates.paymentStatus === 'paid') {
+      const before = await Institute.findById(req.params.id).select('paymentStatus').lean();
+      if (!before || before.paymentStatus !== 'paid') updates.lastPaymentDate = new Date();
     }
 
     const institute = await Institute.findByIdAndUpdate(
       req.params.id,
       { ...updates, updatedAt: new Date() },
-      { new: true }
+      { new: true, runValidators: true }
     ).select('-password');
     
     if (!institute) return res.status(404).json({ error: 'Institute not found' });
@@ -214,10 +254,18 @@ router.put('/institutes/:id', requireAdmin, async (req, res) => {
 // PATCH /api/admin/institutes/:id  (activate/deactivate / payment status updates)
 router.patch('/institutes/:id', requireAdmin, async (req, res) => {
   try {
+    if (!isObjectId(req.params.id)) {
+      return res.status(404).json({ error: 'Institute not found' });
+    }
     const allowed = ['isActive', 'paymentStatus', 'planAmount', 'dueDate', 'billingDay'];
     const updates = {};
     allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
     updates.updatedAt = new Date();
+    // Stamp the real payment date on the paid transition (see /revenue above).
+    if (updates.paymentStatus === 'paid') {
+      const before = await Institute.findById(req.params.id).select('paymentStatus').lean();
+      if (!before || before.paymentStatus !== 'paid') updates.lastPaymentDate = new Date();
+    }
     const institute = await Institute.findByIdAndUpdate(req.params.id, updates, { new: true }).select('-password');
     if (!institute) return res.status(404).json({ error: 'Institute not found' });
     res.json(institute);
@@ -314,6 +362,19 @@ router.get('/billing/logs', requireAdmin, async (req, res) => {
 // POST /api/admin/setup - Create initial admin (run once)
 router.post('/setup', async (req, res) => {
   try {
+    // SECURITY: this endpoint has no authentication and was gated only by "no
+    // admin exists yet". This deployment authenticates the admin from
+    // ADMIN_USERNAME/ADMIN_PASSWORD, so the Admin collection is EMPTY and that
+    // gate passes - meaning anyone on the internet could POST here and plant a
+    // permanent admin record. Bootstrap is now refused once env credentials are
+    // configured, and otherwise requires a matching SETUP_KEY.
+    if (process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD) {
+      return res.status(403).json({ error: 'Admin bootstrap is disabled' });
+    }
+    if (!process.env.SETUP_KEY || req.headers['x-setup-key'] !== process.env.SETUP_KEY) {
+      return res.status(403).json({ error: 'Admin bootstrap is disabled' });
+    }
+
     const adminCount = await Admin.countDocuments();
     if (adminCount > 0) return res.status(400).json({ error: 'Admin already exists' });
 

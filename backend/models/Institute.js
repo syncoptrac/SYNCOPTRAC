@@ -73,4 +73,14 @@ instituteSchema.pre('save', function(next) {
   next();
 });
 
+// INDEXES (additive - no existing data is modified). loginId and email already
+// have unique indexes from their field definitions. These cover the admin
+// dashboard's per-load counts and the institute list ordering:
+//  - countDocuments({ isActive: true })
+//  - countDocuments({ createdAt: { $gte: startOfMonth } }) and .sort({ createdAt: -1 })
+//  - the paid-in-period revenue query
+instituteSchema.index({ isActive: 1 });
+instituteSchema.index({ createdAt: -1 });
+instituteSchema.index({ paymentStatus: 1, lastPaymentDate: -1 });
+
 module.exports = mongoose.model('Institute', instituteSchema);

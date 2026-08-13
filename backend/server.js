@@ -37,7 +37,10 @@ app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, curl, Postman)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    // SECURITY: an unset FRONTEND_URL previously allowed EVERY origin, which in
+    // production is an open CORS policy. Local development stays permissive.
+    if (allowedOrigins.length === 0 && process.env.NODE_ENV !== 'production') {
       return callback(null, true);
     }
     callback(new Error('Not allowed by CORS'));
@@ -88,11 +91,20 @@ app.use(mongoSanitize());
 app.use(hpp());
 
 // ─── Global rate limiter — 200 req / 15 min per IP ────────────────────────────
+// BUGFIX (random "server timed out" failures): 200 requests / 15 min is BELOW
+// what one active user generates. The institute portal polls verify-session
+// continuously, which on its own consumed the entire allowance in ~13 minutes -
+// after which EVERY request, including ordinary page loads, was answered with
+// HTTP 429. That is precisely the "sometimes things load, sometimes they don't"
+// behaviour. The poll has its own dedicated limiter (60/min) so it is excluded
+// here, and the cap is raised to a level that still stops abuse but cannot
+// throttle legitimate single-user traffic.
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 200,
+  max: 1000,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.path === '/api/auth/verify-session',
   message: { error: 'Too many requests, please try again later.' },
 });
 app.use(globalLimiter);
@@ -187,7 +199,21 @@ app.use((err, req, res, next) => {
 // ─── Connect to MongoDB ───────────────────────────────────────────────────────
 const { startBillingScheduler } = require('./services/billingScheduler');
 
-mongoose.connect(process.env.MONGODB_URI)
+// RELIABILITY: with no options the driver waits its DEFAULT 30 SECONDS to
+// select a server, so a brief Atlas hiccup left requests hanging until the
+// client gave up - indistinguishable to the user from "the server took too long
+// to respond". Failing fast surfaces a real error instead. The pool is sized
+// for Render's single web worker rather than the default 100 sockets.
+mongoose.connection.on('error', (e) => console.error('MongoDB error:', e.message));
+mongoose.connection.on('disconnected', () => console.warn('MongoDB disconnected - driver will retry'));
+mongoose.connection.on('reconnected', () => console.log('MongoDB reconnected'));
+
+mongoose.connect(process.env.MONGODB_URI, {
+  serverSelectionTimeoutMS: 8000,
+  socketTimeoutMS: 45000,
+  maxPoolSize: 20,
+  minPoolSize: 2,
+})
   .then(() => {
     console.log('✅ MongoDB connected');
     const PORT = process.env.PORT || 5000;
