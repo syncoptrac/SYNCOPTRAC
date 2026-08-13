@@ -109,8 +109,27 @@ async function fetchUpstream(key, url) {
 // exactly one upstream call, only for data somebody actually asked for.
 function bustCache(instituteId) {
   const prefix = String(instituteId);
+  let base = null;
   for (const [key, entry] of cache.entries()) {
-    if (key.startsWith(prefix)) entry.mustRevalidate = true;
+    if (key.startsWith(prefix)) {
+      entry.mustRevalidate = true;
+      // The endpoint is already recorded on each cache entry, so this warm needs
+      // no extra argument and no change to the 15 write call sites.
+      if (!base && entry.url) base = normaliseAppsScriptUrl(entry.url);
+    }
+  }
+
+  // Refill everything in the BACKGROUND with a single bundled call, so the next
+  // page opened after saving or deleting is already warm. This was removed in
+  // round 1 when it cost seven serial calls; at one call it is cheap.
+  if (base && !bundleUnsupported.has(base)) {
+    (async () => {
+      try {
+        await fetchBundle(prefix, base, await getFeeCycle(prefix));
+      } catch {
+        // A background warm must never surface to the user.
+      }
+    })();
   }
 }
 
@@ -327,8 +346,8 @@ async function attemptAppsScript(url, method, body, budgetMs) {
 // 45s and answer instantly with the same diagnosis. Any success clears it.
 // Transient failures (timeout/quota) never trip it, so a slow-but-alive script
 // is still retried normally.
-const BREAKER_THRESHOLD = 2;
-const BREAKER_COOLDOWN_MS = 45000;
+const BREAKER_THRESHOLD = 3;
+const BREAKER_COOLDOWN_MS = 12000;
 const breaker = new Map();          // endpoint -> { fails, code, until }
 
 function breakerState(key) {

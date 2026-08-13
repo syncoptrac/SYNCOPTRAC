@@ -9,6 +9,8 @@ import toast from 'react-hot-toast';
 import { todayIST, fmtDate } from '../../lib/dateUtils';
 
 const STUDENTS_URL = '/api/sheets/students';
+// Must match the .row-out / .scard-out animation duration below.
+const ROW_EXIT_MS = 260;
 
 /**
  * Last line of defence for the student count.
@@ -70,6 +72,8 @@ export default function StudentsPage() {
   //             the handler running and fire its error toast on the next page).
   //   reqSeq  - only the NEWEST request may write to state, so a slow earlier
   //             response can never overwrite fresher data.
+  // StudentIDs currently playing their exit animation.
+  const [removing, setRemoving] = useState([]);
   const alive = useRef(true);
   const reqSeq = useRef(0);
 
@@ -161,19 +165,35 @@ export default function StudentsPage() {
 
   const handleDelete = async (id, name) => {
     if (!confirm(`Delete student "${name}"?`)) return;
+
+    const sid = String(id);
+    const drop = (list) => list.filter((s) => String(s.StudentID) !== sid);
+    // Kept so the row can be restored verbatim if the server refuses.
+    const snapshot = students;
+
+    // Play the exit animation, THEN unmount the row.
+    setRemoving((prev) => (prev.includes(sid) ? prev : [...prev, sid]));
+    await new Promise((r) => setTimeout(r, ROW_EXIT_MS));
+    if (!alive.current) return;
+    setStudents(drop);
+    setRemoving((prev) => prev.filter((x) => x !== sid));
+    patchCache(STUDENTS_URL, (cached) => ({ ...cached, data: drop(canonicalStudents(cached?.data)) }));
+
     try {
-      await api.delete(`/api/sheets/students/${id}`);
+      await api.delete(`/api/sheets/students/${sid}`);
+      if (!alive.current) return;
       toast.success('Student deleted');
-      // Remove locally instead of refetching everything, then revalidate quietly.
-      const drop = (list) => list.filter((s) => String(s.StudentID) !== String(id));
-      if (alive.current) setStudents((prev) => drop(prev));
-      patchCache(STUDENTS_URL, (cached) => ({ ...cached, data: drop(canonicalStudents(cached?.data)) }));
       revalidate(STUDENTS_URL).then((data) => {
         if (!alive.current || !data) return;
         setStudents(canonicalStudents(data.data));
       });
     } catch (err) {
-      if (!isCancel(err)) notifyError('student-delete', errorMessage(err, 'Delete failed'));
+      if (isCancel(err) || !alive.current) return;
+      // The delete did not happen - put the student back rather than leaving the
+      // list showing a deletion that never reached the sheet.
+      setStudents(snapshot);
+      patchCache(STUDENTS_URL, (cached) => ({ ...cached, data: snapshot }));
+      notifyError('student-delete', errorMessage(err, 'Delete failed'));
     }
   };
 
@@ -285,7 +305,13 @@ export default function StudentsPage() {
                 </thead>
                 <tbody>
                   {filtered.map((s, i) => (
-                    <tr key={s.StudentID} className="row" style={{ animationDelay: `${Math.min(i, 12) * 28}ms` }}>
+                    <tr
+                      key={s.StudentID}
+                      className={`row${removing.includes(String(s.StudentID)) ? ' row-out' : ''}`}
+                      style={removing.includes(String(s.StudentID))
+                        ? undefined
+                        : { animationDelay: `${Math.min(i, 12) * 28}ms` }}
+                    >
                       <td><span className="idchip">{i + 1}</span></td>
                       <td>
                         <div className="who">
@@ -326,7 +352,13 @@ export default function StudentsPage() {
           {/* ---- Mobile: card list, no horizontal scrolling ---- */}
           <div className="cards">
             {filtered.map((s, i) => (
-              <div className="scard" key={s.StudentID} style={{ animationDelay: `${Math.min(i, 10) * 32}ms` }}>
+              <div
+                className={`scard${removing.includes(String(s.StudentID)) ? ' scard-out' : ''}`}
+                key={s.StudentID}
+                style={removing.includes(String(s.StudentID))
+                  ? undefined
+                  : { animationDelay: `${Math.min(i, 10) * 32}ms` }}
+              >
                 <div className="scard-top">
                   <span className="av av-lg" style={{ background: tintFor(s.StudentName) }}>
                     {initials(s.StudentName)}
@@ -515,6 +547,27 @@ export default function StudentsPage() {
         @keyframes rowIn {
           from { opacity: 0; transform: translateY(5px); }
           to   { opacity: 1; transform: translateY(0); }
+        }
+        /* The row visibly leaves instead of blinking out of existence. Clicks are
+           blocked while it animates so Delete cannot be fired twice. */
+        .row-out {
+          animation: rowOut ${ROW_EXIT_MS}ms cubic-bezier(0.4, 0, 1, 1) both;
+          pointer-events: none;
+        }
+        @keyframes rowOut {
+          from { opacity: 1; transform: translateX(0); }
+          to   { opacity: 0; transform: translateX(-16px); }
+        }
+        .scard-out {
+          animation: cardOut ${ROW_EXIT_MS}ms cubic-bezier(0.4, 0, 1, 1) both;
+          pointer-events: none;
+        }
+        @keyframes cardOut {
+          from { opacity: 1; transform: scale(1); }
+          to   { opacity: 0; transform: scale(0.96); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .row-out, .scard-out { animation-duration: 1ms; }
         }
         .th-act { text-align: right; }
         /* Display serial: position in the list, 1..n. The ID chip beside it is
