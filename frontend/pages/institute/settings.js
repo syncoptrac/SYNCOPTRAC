@@ -22,7 +22,7 @@ export default function InstituteSettings() {
 
   useEffect(() => {
     const u = getUser();
-    if (!u || u.role !== 'institute') { router.push('/institute/login'); return; }
+    if (!u || u.role !== 'institute') { router.replace('/institute/login'); return; }
     loadProfile();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

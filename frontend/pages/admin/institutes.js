@@ -312,7 +312,7 @@ export default function AdminInstitutes() {
 
   useEffect(() => {
     const user = getUser();
-    if (!user || user.role !== 'admin') { router.push('/admin/login'); return; }
+    if (!user || user.role !== 'admin') { router.replace('/admin/login'); return; }
     fetchInstitutes();
     if (router.query.action === 'new') openNew();
   // eslint-disable-next-line react-hooks/exhaustive-deps

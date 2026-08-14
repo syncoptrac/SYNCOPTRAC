@@ -230,7 +230,7 @@ export default function Navbar() {
           {/* Brand */}
           <Link href="/" className="nvx-brand" style={S.brand}>
             <span style={S.logo} aria-hidden="true">
-              <img src="/logo.png" alt="SYNCOPTRAC" className="nvx-logo-img" style={S.logoImg} />
+              <img src="/logo.png" alt="SYNCOPTRAC" className="nvx-logo-img" width="30" height="30" style={S.logoImg} />
             </span>
             <span style={S.word}>
               <span style={S.mark}>

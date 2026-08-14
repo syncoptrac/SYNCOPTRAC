@@ -100,7 +100,7 @@ export default function StudentsPage() {
 
   useEffect(() => {
     const user = getUser();
-    if (!user || user.role !== 'institute') { router.push('/institute/login'); return; }
+    if (!user || user.role !== 'institute') { router.replace('/institute/login'); return; }
     fetchStudents();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

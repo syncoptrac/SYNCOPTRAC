@@ -113,7 +113,7 @@ export default function AdminLogin() {
       toast.success(welcomeMsg);
       setSuccessLabel(welcomeMsg);
       setPhase('success');
-      after(SUCCESS_HOLD_MS, () => router.push('/admin/dashboard'));
+      after(SUCCESS_HOLD_MS, () => router.replace('/admin/dashboard'));
     } catch (err) {
       const msg = err.response?.data?.error || 'Login failed';
       await holdFloor();
@@ -148,7 +148,7 @@ export default function AdminLogin() {
 
         <div className="brand-inner">
           <div className="brand-lock">
-            <img src="/logo.png" alt="SYNCOPTRAC" className="logo" />
+            <img src="/logo.png" alt="SYNCOPTRAC" className="logo" width="34" height="34" />
             <span className="wordmark">
               <span className="wm-c">S</span>YNCOPTRAC
             </span>

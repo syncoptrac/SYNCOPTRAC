@@ -27,7 +27,7 @@ export default function Footer() {
             <div className="ft-brandcol">
               <div className="ft-brand">
                 <span className="ft-logo" aria-hidden="true">
-                  <img src="/logo.png" alt="SYNCOPTRAC" className="ft-logo-img" />
+                  <img src="/logo.png" alt="SYNCOPTRAC" className="ft-logo-img" width="44" height="44" />
                 </span>
                 <span className="ft-word">
                   <span className="ft-mark">

@@ -49,6 +49,11 @@ const NAV = [
 // and props are untouched; warmth comes from the backend cache instead.
 const warmFor = () => {};
 
+// Shared across mounts so remounting the layout on navigation does not
+// re-trigger the session check. See the effect below.
+const SESSION_POLL_MS = 15000;
+let lastSessionCheck = 0;
+
 export default function InstituteLayout({ children, title }) {
   const router = useRouter();
   const user = getUser();
@@ -56,7 +61,10 @@ export default function InstituteLayout({ children, title }) {
   const logout = () => {
     clearAuth();
     try { sessionStorage.clear(); } catch {}
-    window.location.href = '/institute/login';
+    // replace(), not href: href pushed a history entry, so Back after a
+    // logout re-entered the protected page, painted its shell and only then
+    // bounced to login. That was the visible "dashboard, then login" flash.
+    window.location.replace('/institute/login');
   };
 
   // Poll for session displacement. This ran every 4 SECONDS, i.e. 900 requests
@@ -69,6 +77,7 @@ export default function InstituteLayout({ children, title }) {
 
     const checkSession = async () => {
       if (!alive) return;
+      lastSessionCheck = Date.now();
       try {
         // Short 6s timeout — don't wait for Render cold start
         await api.get('/api/auth/verify-session', { timeout: 6000 });
@@ -81,8 +90,15 @@ export default function InstituteLayout({ children, title }) {
       }
     };
 
-    checkSession();
-    const timer = setInterval(checkSession, 15000);
+    // This layout is mounted per page, so it REMOUNTS on every navigation and
+    // the mount check fired a fresh verify-session each time: a walk through
+    // dashboard -> students -> fees -> enquiries cost four extra round trips,
+    // each one a Mongo lookup, competing with the read the page actually
+    // needed. The 15s interval already covers displacement, so skip the mount
+    // check when one has run inside that same window. Worst-case detection
+    // latency is unchanged at 15s.
+    if (Date.now() - lastSessionCheck >= SESSION_POLL_MS) checkSession();
+    const timer = setInterval(checkSession, SESSION_POLL_MS);
     return () => { alive = false; clearInterval(timer); };
   }, []);
 
@@ -122,7 +138,7 @@ export default function InstituteLayout({ children, title }) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           {/* Brand */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <img src="/logo.png" alt="logo" style={{ height: 28, width: 28, objectFit: 'cover', borderRadius: 7, boxShadow: '0 0 10px rgba(92,225,230,0.25)' }} />
+            <img src="/logo.png" alt="logo" width={28} height={28} style={{ height: 28, width: 28, objectFit: 'cover', borderRadius: 7, boxShadow: '0 0 10px rgba(92,225,230,0.25)' }} />
             <span style={{ fontWeight: 800, fontSize: '0.88rem', letterSpacing: '-0.01em' }}>
               <span style={{ color: '#5ce1e6' }}>S</span><span style={{ color: '#ffffff' }}>YNCOPTRAC</span>
             </span>

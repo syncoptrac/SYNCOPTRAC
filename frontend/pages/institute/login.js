@@ -132,7 +132,7 @@ export default function InstituteLogin() {
       setSuccessLabel(welcomeMsg);
       setPhase('success');
       // submittingRef intentionally stays true -- the page is navigating away.
-      after(SUCCESS_HOLD_MS, () => router.push('/institute/dashboard'));
+      after(SUCCESS_HOLD_MS, () => router.replace('/institute/dashboard'));
     } catch (err) {
       const msg = err.response?.data?.error || 'Login failed';
       await holdFloor();
@@ -166,7 +166,7 @@ export default function InstituteLogin() {
 
         <div className="brand-inner">
           <Link href="/" className="brand-lock">
-            <img src="/logo.png" alt="SYNCOPTRAC" className="logo" />
+            <img src="/logo.png" alt="SYNCOPTRAC" className="logo" width="34" height="34" />
             <span className="wordmark">
               <span className="wm-c">S</span>YNCOPTRAC
             </span>

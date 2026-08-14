@@ -41,7 +41,7 @@ export default function EnquiriesPage() {
 
   useEffect(() => {
     const user = getUser();
-    if (!user || user.role !== 'institute') { router.push('/institute/login'); return; }
+    if (!user || user.role !== 'institute') { router.replace('/institute/login'); return; }
     fetchEnquiries();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

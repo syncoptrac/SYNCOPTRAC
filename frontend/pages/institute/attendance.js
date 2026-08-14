@@ -46,7 +46,7 @@ export default function AttendancePage() {
 
   useEffect(() => {
     const user = getUser();
-    if (!user || user.role !== 'institute') { router.push('/institute/login'); return; }
+    if (!user || user.role !== 'institute') { router.replace('/institute/login'); return; }
     fetchStudents();
     // Speculative read REMOVED. This fired a FULL attendance read on every visit
     // to warm a History tab the user may never open - and Attendance is the

@@ -1,10 +1,18 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
+import dynamic from 'next/dynamic';
 import InstituteLayout from '../../components/layout/InstituteLayout';
 import CountUp from '../../components/ui/CountUp';
 import api, { getUser, errorMessage } from '../../lib/api';
 import { T, STATUS } from '../../components/ds/tokens';
+
+/* recharts is code-split out of this route's first payload - the component
+   file explains why and why it is visually identical. The ring is
+   decorative and its 132px slot is reserved in CSS, so nothing shifts. */
+const FeeDonut = dynamic(() => import('../../components/ui/FeeDonut'), {
+  ssr: false,
+  loading: () => null,
+});
 
 /* ==========================================================================
    INSTITUTE DASHBOARD - "Workbench"
@@ -38,7 +46,7 @@ export default function InstituteDashboard() {
 
   useEffect(() => {
     const u = getUser();
-    if (!u || u.role !== 'institute') { router.push('/institute/login'); return; }
+    if (!u || u.role !== 'institute') { router.replace('/institute/login'); return; }
     setUser(u);
     fetchSummary();
   }, []);
@@ -236,23 +244,7 @@ export default function InstituteDashboard() {
 
             <div className="fee-body">
               <div className="donut" aria-hidden="true">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={donutData}
-                      dataKey="value"
-                      innerRadius="70%"
-                      outerRadius="100%"
-                      startAngle={90}
-                      endAngle={-270}
-                      stroke="none"
-                      isAnimationActive={hasFeeData}
-                      animationDuration={900}
-                    >
-                      {donutData.map((d, i) => <Cell key={i} fill={donutColors[i]} />)}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
+                <FeeDonut data={donutData} colors={donutColors} animate={hasFeeData} />
                 <div className="donut-mid">
                   <span className="donut-pct sc-num">{collectRate}%</span>
                   <span className="donut-lab">collected</span>

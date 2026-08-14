@@ -39,7 +39,7 @@ export default function AdminLeads() {
 
   useEffect(() => {
     const user = getUser();
-    if (!user || user.role !== 'admin') { router.push('/admin/login'); return; }
+    if (!user || user.role !== 'admin') { router.replace('/admin/login'); return; }
     fetchLeads();
   }, []);
 
@@ -54,7 +54,7 @@ export default function AdminLeads() {
         setTimeout(() => fetchLeads(2), 3000);
         return;
       }
-      if (status === 401 || status === 403) { toast.error('Session expired.'); router.push('/admin/login'); }
+      if (status === 401 || status === 403) { toast.error('Session expired.'); router.replace('/admin/login'); }
       else toast.error(`Failed to load leads: ${msg}`);
     } finally { setLoading(false); }
   };

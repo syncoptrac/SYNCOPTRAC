@@ -1,50 +1,50 @@
 import { Html, Head, Main, NextScript } from 'next/document';
 
-/* ── First-paint guard (fixes the white flash) ────────────────────────
-   On a cold visit the browser was painting the raw HTML before the
-   stylesheet had been applied, so a white page with unstyled text
-   appeared for a moment. Two inline (non-blocking-free) pieces fix it:
+/* ── First paint ────────────────────────────────────────
+   This file is where the "flash of unstyled content" was coming FROM, rather
+   than being prevented.
 
-   1. CRITICAL_CSS  – an inline <style>, so it is guaranteed to be in
-      effect on the very first paint. It sets the deep navy canvas and
-      hides the app subtree while `sc-boot` is on <html>.
-   2. BOOT_SCRIPT   – adds `sc-boot`, then removes it as soon as every
-      stylesheet has actually been applied (or after a hard 2s cap, so
-      the page can never stay hidden).                                  */
+   The previous version hid the entire app (html.sc-boot #__next{opacity:0})
+   and un-hid it from JavaScript once every stylesheet reported a .sheet, with
+   a 1200ms interval cap and a 2000ms setTimeout as backstops. Two problems:
+
+   1. Those caps are UNCONDITIONAL reveals. If the CSS had not applied within
+      1.2s - one cold mobile connection is enough - the timer stripped the
+      class and showed the page in whatever state it was in: browser-default
+      black 16px text, no flex/grid so content stacked in the top-left corner,
+      and a 1600x1600 logo at full intrinsic size. That is precisely the
+      reported flash, and it is why it only happened "sometimes".
+
+   2. It was protection the browser already provides. A <link rel=stylesheet>
+      in <head> is render-blocking - the browser will not paint the document
+      until it has that CSS. Gating visibility on JS instead traded that
+      guarantee for a race, and cost every load up to 1.2s of blank canvas
+      plus a 240ms fade before anything could appear.
+
+   So the guard is gone. What remains is the part that genuinely earns its
+   place: an inline <style> (parsed before any paint, needs no network) that
+   sets the correct canvas colour, plus one synchronous line that picks which
+   canvas this route uses. /institute/* and /admin/* render on the light app
+   canvas and everything else on marketing navy, so without this the app
+   routes painted navy and were repainted light the instant globals.css
+   applied. Both colours below are already used by the app; nothing is new.
+
+   opacity is also no longer set on #__next. An ancestor with opacity < 1
+   becomes the containing block for position:fixed descendants, which put the
+   dock, the route veil and the toaster at risk of shifting mid-transition. */
 
 const CRITICAL_CSS = `
 html{background:#0B1F4D;-webkit-text-size-adjust:100%}
 body{margin:0;background:#0B1F4D;color:#F8FAFC;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif}
-#__next{min-height:100vh;background:#0B1F4D;opacity:1;transition:opacity 240ms cubic-bezier(0.16,1,0.3,1)}
-html.sc-boot{background:#0B1F4D}
-html.sc-boot #__next{opacity:0}
-/* ROOT-CAUSE FIX for the remaining flash. The critical CSS above paints the
-   marketing navy, but /institute/* and /admin/* render on the light app canvas
-   (#F8FAFC, exactly the value already used by InstituteLayout and the --sc-bg
-   token). So those routes painted navy first and were then repainted light the
-   moment globals.css applied - the visible "flash" was that repaint, not
-   missing CSS. The boot script below picks the correct canvas from the URL
-   BEFORE first paint, so the first pixels are already the right colour.
-   No new colours, no layout change: the same two values the app already uses. */
+#__next{min-height:100vh;background:#0B1F4D}
 html.sc-canvas-app,html.sc-canvas-app body{background:#F8FAFC;color:#111827}
 html.sc-canvas-app #__next{background:#F8FAFC}
-html.sc-boot.sc-canvas-app{background:#F8FAFC}
-@media (prefers-reduced-motion: reduce){#__next{transition:none}}
 `;
 
-const BOOT_SCRIPT = `(function(){try{var d=document,h=d.documentElement,done=0,t=0,iv;
-var p=(d.location&&d.location.pathname)||'';
-var app=/^\/(institute|admin)(\/|$)/.test(p)&&!/\/login\/?$/.test(p);
-h.className=(h.className?h.className+' ':'')+'sc-boot'+(app?' sc-canvas-app':'');
-function show(){if(done)return;done=1;if(iv)clearInterval(iv);
-h.className=h.className.replace(/(^|\s)sc-boot(\s|$)/g,' ').replace(/\s+/g,' ').replace(/^\s|\s$/g,'');}
-function ready(){var l=d.querySelectorAll('link[rel="stylesheet"]');
-if(!l.length)return d.readyState!=='loading';
-for(var i=0;i<l.length;i++){var s=null;try{s=l[i].sheet}catch(e){s=1}if(!s)return false}return true}
-iv=setInterval(function(){t+=25;if(ready()||t>=1200)show()},25);
-d.addEventListener('DOMContentLoaded',function(){if(ready())show()});
-window.addEventListener('load',show);
-setTimeout(show,2000);}catch(e){}})();`;
+/* Synchronous, no timers, and it cannot strand the page hidden because it
+   never hides anything. */
+const BOOT_SCRIPT = `(function(){try{var d=document,h=d.documentElement,p=(d.location&&d.location.pathname)||'';
+if(/^\/(institute|admin)(\/|$)/.test(p)&&!/\/login\/?$/.test(p)){h.className=(h.className?h.className+' ':'')+'sc-canvas-app'}}catch(e){}})();`;
 
 export default function Document(props) {
   // Nonce is injected by middleware via X-Nonce response header,
@@ -72,8 +72,10 @@ export default function Document(props) {
         <meta property="og:description" content="Manage students, attendance, fees, and enquiries through a single structured system—reducing mental workload, eliminating scattered records, preventing missed follow-ups, and minimizing lost revenue." />
         <meta property="og:type" content="website" />
         <link rel="icon" href="/logo.png" type="image/jpeg" />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        {/* No web font is loaded anywhere in this app - the UI uses the
+            system font stack - so these two preconnects were opening a DNS
+            lookup and a TLS handshake per page load for a font request that
+            never comes. Nothing renders differently without them. */}
       </Head>
       <body>
         <Main />

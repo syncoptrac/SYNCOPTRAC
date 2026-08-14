@@ -49,7 +49,7 @@ export default function FeesPage() {
 
   useEffect(() => {
     const user = getUser();
-    if (!user || user.role !== 'institute') { router.push('/institute/login'); return; }
+    if (!user || user.role !== 'institute') { router.replace('/institute/login'); return; }
     fetchFees();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

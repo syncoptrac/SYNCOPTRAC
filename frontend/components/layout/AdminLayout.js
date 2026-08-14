@@ -22,7 +22,8 @@ export default function AdminLayout({ children, title }) {
   const logout = () => {
     clearAuth();
     try { sessionStorage.clear(); } catch {}
-    window.location.href = '/admin/login';
+    // replace(), not href - see InstituteLayout for why.
+    window.location.replace('/admin/login');
   };
 
   return (
@@ -48,7 +49,7 @@ export default function AdminLayout({ children, title }) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           {/* Brand */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <img src="/logo.png" alt="logo" style={{ height: 28, width: 28, objectFit: 'cover', borderRadius: 7, boxShadow: '0 0 10px rgba(92,225,230,0.25)' }} />
+            <img src="/logo.png" alt="logo" width={28} height={28} style={{ height: 28, width: 28, objectFit: 'cover', borderRadius: 7, boxShadow: '0 0 10px rgba(92,225,230,0.25)' }} />
             <span style={{ fontWeight: 800, fontSize: '0.88rem', letterSpacing: '-0.01em' }}>
               <span style={{ color: '#5ce1e6' }}>S</span><span style={{ color: '#ffffff' }}>YNCOPTRAC</span>
             </span>
