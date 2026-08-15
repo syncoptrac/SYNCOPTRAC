@@ -782,3 +782,24 @@ html {
     animation: none !important;
   }
 }
+
+/* ------------------------------------------------------------------
+   First-paint gate, second half. The inline critical CSS in
+   pages/_document.js hides #__next while <html> carries .sc-pre; this
+   rule releases it.
+
+   Repeating the class raises specificity, so the release wins no matter
+   which order the two sheets end up in, and it can only take effect once
+   this file has actually been applied. That is the entire point: content
+   becomes visible at the same moment it becomes styled, with no timer.
+
+   --sc-css-ready is the sentinel the boot script checks on window load,
+   so a stylesheet that never arrives degrades to unstyled content rather
+   than a permanently blank screen.
+   ------------------------------------------------------------------ */
+html.sc-pre {
+  --sc-css-ready: 1;
+}
+html.sc-pre.sc-pre #__next {
+  visibility: visible;
+}
