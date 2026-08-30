@@ -55,10 +55,27 @@ const MAXW = { sm: '25rem', md: '34rem', lg: '44rem', xl: '58rem' };
 export default function Modal({ open, onClose, title, children, size = 'md', footer = null }) {
   const panelRef = useRef(null);
 
-  // A portal needs a real DOM node, which does not exist during SSR or on the
-  // hydrating render. Gating on this keeps server and client markup identical.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  // WHERE the modal is portaled matters as much as THAT it is portaled.
+  //
+  // The design tokens are declared as ".sc-app { --sc-accent: ... }" in
+  // components/ds/DesignSystem.js - scoped to a CLASS, not to :root. Custom
+  // properties only inherit DOWN the DOM tree, so anything rendered outside
+  // the .sc-app element resolves every var(--sc-*) to nothing. Portaling to
+  // document.body therefore stripped the footer buttons of their background,
+  // radius and height: .sc-btn-primary lost its gradient but kept color:#fff,
+  // which is white-on-white and looks like a missing button, and
+  // .sc-btn-secondary fell back to a square black border. It also lost
+  // ".sc-app *{ box-sizing: border-box }" for the same reason.
+  //
+  // So portal into the layout root instead of the body. The overlay is still a
+  // SIBLING of <main> and <nav> - which is all the z-index fix needs - but it
+  // stays INSIDE the token scope. Falls back to <body> if a page renders no
+  // layout shell. A portal also needs a real DOM node, which does not exist
+  // during SSR, so resolving it in an effect keeps hydration markup identical.
+  const [portalHost, setPortalHost] = useState(null);
+  useEffect(() => {
+    setPortalHost(document.querySelector('.app-shell.sc-app') || document.body);
+  }, []);
 
   // Escape to close + scroll lock. Both clean up on unmount.
   useEffect(() => {
@@ -85,7 +102,7 @@ export default function Modal({ open, onClose, title, children, size = 'md', foo
     return () => clearTimeout(t);
   }, [open]);
 
-  if (!open || !mounted) return null;
+  if (!open || !portalHost) return null;
 
   return createPortal(
     <div className="host" role="dialog" aria-modal="true" aria-label={title}>
@@ -303,6 +320,6 @@ export default function Modal({ open, onClose, title, children, size = 'md', foo
         }
       `}</style>
     </div>,
-    document.body
+    portalHost
   );
 }
