@@ -13,23 +13,29 @@ const COLORS = ['#3b82f6','#8b5cf6','#10b981','#f59e0b','#ef4444','#ec4899','#06
 const EMPTY_BATCH = { batchName: '', course: '', teacher: '', description: '' };
 const EMPTY_SLOT  = { batchId: '', day: 'Monday', startTime: '09:00', endTime: '10:00', subject: '' };
 
-// Sheets can return a time as "09:00", as an ISO artifact, or as a Date object.
-// <input type="time"> silently renders blank for anything that is not exactly
-// "HH:MM", and a blank input would then save an empty time over a real one.
+// `<input type="time">` only accepts a strict "HH:MM" value and silently shows
+// blank for anything else. Google Sheets stores "09:00" as a date serial, which
+// comes back over the wire as "1899-12-30T06:39:50.000Z", so the weekly editor
+// has to normalise before binding. (fmtTime() below is the display-side twin of
+// this - it produces "9:00 AM" for reading, this produces "09:00" for editing.)
 function normTime(val) {
-  if (!val) return '';
-  if (typeof val === 'string' && /^\d{1,2}:\d{2}$/.test(val.trim())) {
-    const [h, m] = val.trim().split(':');
+  if (val === null || val === undefined || val === '') return '';
+  const s = String(val).trim();
+  if (/^\d{1,2}:\d{2}$/.test(s)) {
+    const [h, m] = s.split(':');
     return `${String(Number(h)).padStart(2, '0')}:${m}`;
   }
-  const d = new Date(val);
-  if (!isNaN(d.getTime())) {
-    return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+  if (s.includes('T')) {
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+    }
   }
   return '';
 }
 
-// One editable row per day, Monday..Sunday, all off by default.
+// One editable row per weekday. This is the shape the whole weekly editor works
+// on: the user toggles/edits these seven rows and saves them in ONE operation.
 const blankWeek = () =>
   DAYS.map((day) => ({ day, enabled: false, startTime: '09:00', endTime: '10:00', subject: '' }));
 
@@ -83,30 +89,33 @@ export default function BatchesPage() {
   const [editSlotId, setEditSlotId] = useState(null);
   const [slotForm, setSlotForm] = useState(EMPTY_SLOT);
 
-  // Weekly schedule modal: the entire week is edited locally, then saved ONCE.
+  // Weekly timetable modal - configure Mon..Sun, save with ONE action.
   const [showWeekModal, setShowWeekModal] = useState(false);
   const [weekBatch, setWeekBatch] = useState(null);
   const [weekRows, setWeekRows] = useState(blankWeek);
 
   const [saving, setSaving] = useState(false);
+
+  // Shown only when the initial load produced nothing usable. It is cleared on
+  // every successful (re)load, so the page can never sit in a dead end.
   const [loadError, setLoadError] = useState(null);
+
+  // savingRef blocks a second submit SYNCHRONOUSLY. `saving` alone cannot do
+  // this: setState is async, so two clicks in the same tick both observe
+  // saving === false and both fire a request.
+  const savingRef = useRef(false);
+  // Monotonic counter so a slow response from an earlier load can never
+  // overwrite the result of a newer one.
+  const reqSeq = useRef(0);
+  const alive = useRef(true);
+
   const router = useRouter();
 
-  // savingRef blocks a double submit within the same tick. `saving` is state,
-  // so it has not flipped yet when a second click lands a few milliseconds
-  // later - the ref is the only thing that actually stops TEST 5.
-  const savingRef = useRef(false);
-  // Monotonic request id: a slow earlier response must never overwrite a newer one.
-  const reqSeq = useRef(0);
-  // Stops setState after unmount (navigating away mid-request).
-  const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
 
-  // One fetcher per sheet, so a write can refresh ONLY what it changed.
-  // Previously every mutation called loadAll(), re-fetching all three sheets -
-  // and because a write busts the server cache, all three came back cold and
-  // serialised through Apps Script's single execution slot. That is the main
-  // reason saving on this page felt slow.
+  // Each collection is fetched on its own so (a) one slow or failing endpoint
+  // never blocks the other two, and (b) a write only has to refetch what it
+  // actually changed.
   const fetchBatches = useCallback(async () => {
     const res = await api.get('/api/sheets/batches');
     if (alive.current) setBatches(res.data.data || []);
@@ -125,52 +134,48 @@ export default function BatchesPage() {
   const loadAll = useCallback(async () => {
     const seq = ++reqSeq.current;
     setLoading(true);
-    setLoadError(null);
-
-    // allSettled, not all: one slow or failing sheet must not blank the other two.
+    // allSettled, not all: one failing request must not discard the two that
+    // succeeded.
     const [bRes, sRes, slRes] = await Promise.allSettled([
-      api.get('/api/sheets/batches'),
-      api.get('/api/sheets/students'),
-      api.get('/api/sheets/schedule'),
+      fetchBatches(), fetchStudents(), fetchSlots(),
     ]);
-
-    // A newer load started while this one was in flight - discard this result.
-    if (!alive.current || seq !== reqSeq.current) return;
+    if (!alive.current || seq !== reqSeq.current) return; // superseded by a newer load
 
     const failed = [];
-    if (bRes.status === 'fulfilled') setBatches(bRes.value.data.data || []);
-    else { failed.push('batches'); console.error('Batches error:', bRes.reason); }
+    if (bRes.status === 'rejected') { failed.push('batches'); console.error('Batches error:', bRes.reason); }
+    if (sRes.status === 'rejected') { failed.push('students'); console.error('Students error:', sRes.reason); }
+    if (slRes.status === 'rejected') { failed.push('schedule'); console.error('Schedule error:', slRes.reason); }
 
-    if (sRes.status === 'fulfilled') setStudents(sRes.value.data.data || []);
-    else { failed.push('students'); console.error('Students error:', sRes.reason); }
-
-    if (slRes.status === 'fulfilled') setSlots(slRes.value.data.data || []);
-    else { failed.push('schedule'); console.error('Schedule error:', slRes.reason); }
-
-    if (failed.length) {
-      const reason = bRes.reason || sRes.reason || slRes.reason;
-      const msg = errorMessage(reason, `Could not load ${failed.join(', ')}.`);
-      setLoadError(msg);
-      notifyError('batches-load', msg);
+    if (failed.length === 3) {
+      // Nothing came back - render the inline error state with a Retry action
+      // instead of an empty page or a spinner that never resolves.
+      setLoadError(errorMessage(bRes.reason, 'Could not reach the server'));
+    } else {
+      setLoadError(null);
+      // Partial failure: the page is still usable, so a de-duped toast is the
+      // right weight rather than blocking the whole view.
+      failed.forEach((k) => notifyError(`${k}-load`, `Failed to load ${k}`));
     }
+    setLoading(false); // ALWAYS reached - no permanently stuck spinner.
+  }, [fetchBatches, fetchStudents, fetchSlots]);
 
-    // TEST 6: cleared on EVERY path, so the page can never stick on the skeleton.
-    setLoading(false);
-  }, []);
-
-  // Refresh only the sheets a write actually touched.
+  // Targeted refresh after a write. The old code called loadAll() after every
+  // single save, re-fetching batches + students + schedule. A write busts the
+  // server cache, so all three came back cold, and Apps Script runs one
+  // execution at a time per project - meaning a batch rename cost three
+  // serialized upstream round-trips. Refetch only what the write changed.
   const refresh = useCallback(async (keys) => {
     const jobs = [];
     if (keys.includes('batches')) jobs.push(fetchBatches());
     if (keys.includes('students')) jobs.push(fetchStudents());
     if (keys.includes('slots')) jobs.push(fetchSlots());
-    const results = await Promise.allSettled(jobs);
-    const bad = results.find((r) => r.status === 'rejected');
-    if (bad) {
-      console.error('Refresh error:', bad.reason);
-      notifyError('batches-refresh',
-        errorMessage(bad.reason, 'Saved, but the list could not be refreshed.'));
-    }
+    const out = await Promise.allSettled(jobs);
+    out.forEach((r) => {
+      if (r.status === 'rejected') {
+        console.error('Refresh error:', r.reason);
+        notifyError('refresh', 'Saved, but the view could not be refreshed. Pull to reload.');
+      }
+    });
   }, [fetchBatches, fetchStudents, fetchSlots]);
 
   useEffect(() => {
@@ -195,7 +200,7 @@ export default function BatchesPage() {
 
   const saveBatch = async (e) => {
     e.preventDefault();
-    if (savingRef.current) return; // TEST 5: a rapid second click is a no-op
+    if (savingRef.current) return; // synchronous double-submit guard
     savingRef.current = true;
     setSaving(true);
     try {
@@ -207,8 +212,7 @@ export default function BatchesPage() {
         toast.success('Batch created');
       }
       setShowBatchModal(false);
-      // Only the batches sheet changed - students and schedule are untouched.
-      await refresh(['batches']);
+      await refresh(['batches']); // only the batches sheet changed
     } catch (err) {
       // FIX: show the actual error from Apps Script, not just a generic message
       const msg = err.response?.data?.error || err.message || 'Failed to save batch';
@@ -221,7 +225,7 @@ export default function BatchesPage() {
     try {
       await api.delete(`/api/sheets/batches/${id}`);
       toast.success('Batch deleted');
-      // Deleting a batch also removes its slots upstream, so refresh both.
+      // Deleting a batch cascades to its slots server-side, so both change.
       await refresh(['batches', 'slots']);
     } catch (err) {
       const msg = err.response?.data?.error || err.message || 'Failed to delete batch';
@@ -249,7 +253,7 @@ export default function BatchesPage() {
   };
 
   const saveAssignment = async () => {
-    if (savingRef.current) return;
+    if (savingRef.current || !assignBatch) return;
     savingRef.current = true;
     setSaving(true);
     try {
@@ -258,7 +262,8 @@ export default function BatchesPage() {
       });
       toast.success('Students assigned');
       setShowAssignModal(false);
-      // Assignments live on the batch row; the students sheet is unchanged.
+      // The assignment lives in the Students column of the batch row, so the
+      // students sheet itself is untouched - no need to refetch it.
       await refresh(['batches']);
     } catch (err) {
       const msg = err.response?.data?.error || err.message || 'Failed to assign students';
@@ -318,83 +323,93 @@ export default function BatchesPage() {
     }
   };
 
-  // ---- Weekly schedule: configure the whole week, save once ----
-  const openWeekSchedule = (b) => {
-    const mine = slots.filter(s => String(s.BatchID) === String(b.BatchID));
-    setWeekBatch(b);
-    setWeekRows(DAYS.map(day => {
-      const existing = mine.find(s => String(s.Day) === day);
-      return existing
+  // ---- Weekly timetable: configure Mon..Sun, save in ONE operation ----
+
+  const openWeekSchedule = (batch) => {
+    // Seed the seven rows from whatever this batch already has. If the sheet
+    // somehow holds two rows for the same day, the first wins here and the
+    // save below collapses the duplicate.
+    const byDay = new Map();
+    slots.forEach((s) => {
+      if (String(s.BatchID) === String(batch.BatchID) && !byDay.has(s.Day)) byDay.set(s.Day, s);
+    });
+    setWeekBatch(batch);
+    setWeekRows(DAYS.map((day) => {
+      const s = byDay.get(day);
+      return s
         ? {
             day,
             enabled: true,
-            startTime: normTime(existing.StartTime) || '09:00',
-            endTime: normTime(existing.EndTime) || '10:00',
-            subject: existing.Subject || '',
+            startTime: normTime(s.StartTime) || '09:00',
+            endTime: normTime(s.EndTime) || '10:00',
+            subject: s.Subject || '',
           }
         : { day, enabled: false, startTime: '09:00', endTime: '10:00', subject: '' };
     }));
     setShowWeekModal(true);
   };
 
-  const setWeekRow = (day, patch) =>
-    setWeekRows(prev => prev.map(r => (r.day === day ? { ...r, ...patch } : r)));
+  const setWeekRow = useCallback((idx, patch) => {
+    setWeekRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  }, []);
 
-  // Fallback for a deployment whose Apps Script has not been redeployed with the
-  // saveBatchSchedule action yet. Same end state, just N calls instead of one,
-  // so the feature still works before the script is republished.
-  const saveWeekViaLegacyEndpoints = async (batchId, wanted) => {
-    const mine = slots.filter(s => String(s.BatchID) === String(batchId));
-    const byDay = new Map(mine.map(s => [String(s.Day), s]));
-    const wantedDays = new Set(wanted.map(w => w.day));
+  // Fallback path. The one-shot endpoint needs the new Apps Script action to be
+  // published; if this deployment has not been updated yet the backend replies
+  // 404 / "Unknown action". Rather than fail the user's single Save, diff the
+  // week client-side and drive the pre-existing per-slot endpoints. Same end
+  // state, same one-click UX, just more round-trips.
+  //
+  // Requests run in SERIES on purpose: Apps Script executes one request at a
+  // time per project, so firing them in parallel only queues them behind each
+  // other while holding extra sockets open.
+  const saveWeekViaLegacyEndpoints = async (batchId, days) => {
+    const wanted = new Map(days.map((d) => [d.day, d]));
+    const seen = new Set();
+    const ops = [];
 
-    for (const w of wanted) {
-      const existing = byDay.get(w.day);
-      if (existing) {
-        const unchanged =
-          normTime(existing.StartTime) === w.startTime &&
-          normTime(existing.EndTime) === w.endTime &&
-          String(existing.Subject || '') === w.subject;
-        // Reuse the existing SlotID - update, never delete+insert, so no duplicates.
-        if (!unchanged) {
-          await api.put(`/api/sheets/schedule/${existing.SlotID}`, {
-            batchId, day: w.day, startTime: w.startTime, endTime: w.endTime, subject: w.subject,
-          });
+    slots
+      .filter((s) => String(s.BatchID) === String(batchId))
+      .forEach((slot) => {
+        const want = wanted.get(slot.Day);
+        if (!want || seen.has(slot.Day)) {
+          // Day switched off, or a duplicate row for a day we already matched.
+          ops.push(() => api.delete(`/api/sheets/schedule/${slot.SlotID}`));
+          return;
         }
-      } else {
-        await api.post('/api/sheets/schedule', {
-          batchId, day: w.day, startTime: w.startTime, endTime: w.endTime, subject: w.subject,
-        });
-      }
-    }
-    for (const s of mine) {
-      if (!wantedDays.has(String(s.Day))) {
-        await api.delete(`/api/sheets/schedule/${s.SlotID}`);
-      }
-    }
+        seen.add(slot.Day);
+        const unchanged =
+          normTime(slot.StartTime) === want.startTime &&
+          normTime(slot.EndTime) === want.endTime &&
+          String(slot.Subject || '') === String(want.subject || '');
+        if (!unchanged) {
+          ops.push(() => api.put(`/api/sheets/schedule/${slot.SlotID}`, {
+            batchId, day: want.day, startTime: want.startTime,
+            endTime: want.endTime, subject: want.subject,
+          }));
+        }
+      });
+
+    days.forEach((d) => {
+      if (!seen.has(d.day)) ops.push(() => api.post('/api/sheets/schedule', { batchId, ...d }));
+    });
+
+    for (const op of ops) await op(); // eslint-disable-line no-await-in-loop
   };
 
   const saveWeekSchedule = async () => {
-    if (savingRef.current || !weekBatch) return; // TEST 5
+    if (savingRef.current) return; // rapid clicks collapse to one save
+    const batchId = weekBatch?.BatchID;
+    if (!batchId) return;
 
-    const wanted = weekRows
-      .filter(r => r.enabled)
-      .map(r => ({
-        day: r.day,
-        startTime: r.startTime,
-        endTime: r.endTime,
-        subject: (r.subject || '').trim(),
-      }));
-
-    // Validate BEFORE touching the network, so an invalid row can never leave
-    // the week half-written.
-    for (const w of wanted) {
-      if (!w.startTime || !w.endTime) {
-        toast.error(`${w.day}: start and end time are both required`);
+    // Validate before touching the network so a bad row never reaches the sheet.
+    const chosen = weekRows.filter((r) => r.enabled);
+    for (const r of chosen) {
+      if (!r.startTime || !r.endTime) {
+        toast.error(`${r.day}: set both a start and an end time`);
         return;
       }
-      if (w.endTime <= w.startTime) {
-        toast.error(`${w.day}: end time must be after start time`);
+      if (r.endTime <= r.startTime) {
+        toast.error(`${r.day}: end time must be after start time`);
         return;
       }
     }
@@ -402,90 +417,103 @@ export default function BatchesPage() {
     savingRef.current = true;
     setSaving(true);
     try {
+      const days = chosen.map((r) => ({
+        day: r.day,
+        startTime: r.startTime,
+        endTime: r.endTime,
+        subject: r.subject || '',
+      }));
+
+      // Preferred path: ONE request, one upstream execution, diffed server-side.
       try {
-        // TEST 3 + TEST 4: one request creates, updates and removes in one diff.
-        await api.put(`/api/sheets/schedule/batch/${weekBatch.BatchID}`, { days: wanted });
+        await api.put(`/api/sheets/schedule/batch/${batchId}`, { days });
       } catch (err) {
-        const status = err.response?.status;
-        const upstream = String(err.response?.data?.error || '');
-        // Only fall back when the one-shot action genuinely is not deployed yet.
-        if (status === 404 || /unknown action/i.test(upstream)) {
-          await saveWeekViaLegacyEndpoints(weekBatch.BatchID, wanted);
-        } else {
-          throw err;
-        }
+        const status = err?.response?.status;
+        const msg = String(err?.response?.data?.error || '');
+        const unsupported = status === 404 || /unknown action/i.test(msg);
+        if (!unsupported) throw err;
+        await saveWeekViaLegacyEndpoints(batchId, days);
       }
-      toast.success(wanted.length ? 'Weekly schedule saved' : 'All classes removed');
+
+      toast.success(
+        days.length
+          ? `Weekly schedule saved \u2014 ${days.length} class${days.length !== 1 ? 'es' : ''}`
+          : 'Weekly schedule cleared'
+      );
       setShowWeekModal(false);
       await refresh(['slots']);
     } catch (err) {
-      toast.error(err.response?.data?.error || err.message || 'Failed to save weekly schedule');
+      const msg = err.response?.data?.error || err.message || 'Failed to save weekly schedule';
+      toast.error(msg);
     } finally { savingRef.current = false; setSaving(false); }
   };
 
   // ---- Derived data ----
-  // Memoised because these recomputed on every keystroke in the assign search
-  // box and on every unrelated state change.
+  // These used to be recomputed from scratch on every render, and several were
+  // quadratic: getBatchColor()/getBatchName() ran a findIndex()/find() over all
+  // batches for EVERY slot rendered, and the assign list ran an Array.includes()
+  // over the selection for every student row. Indexing once per data change
+  // turns all of it into O(1) lookups.
   const batchIndexById = useMemo(() => {
     const m = new Map();
     batches.forEach((b, i) => m.set(String(b.BatchID), i));
     return m;
   }, [batches]);
 
-  // Was slots.filter(...) inside the card map: O(batches x slots) every render.
+  // Pre-bucketed by day, sorted once. String() guards the sort because a Sheets
+  // time can arrive as a non-string, and .localeCompare() on it used to throw.
+  const slotsByDay = useMemo(() => {
+    const m = new Map(DAYS.map((d) => [d, []]));
+    slots.forEach((s) => { const a = m.get(s.Day); if (a) a.push(s); });
+    m.forEach((a) => a.sort((x, y) => String(x.StartTime).localeCompare(String(y.StartTime))));
+    return m;
+  }, [slots]);
+
   const slotsByBatch = useMemo(() => {
     const m = new Map();
-    slots.forEach(s => {
+    slots.forEach((s) => {
       const k = String(s.BatchID);
       if (!m.has(k)) m.set(k, []);
       m.get(k).push(s);
     });
+    m.forEach((a) => a.sort((x, y) =>
+      (DAYS.indexOf(x.Day) - DAYS.indexOf(y.Day))
+      || String(x.StartTime).localeCompare(String(y.StartTime))));
     return m;
   }, [slots]);
 
-  const slotsByDay = useMemo(() => {
-    const m = new Map();
-    slots.forEach(s => {
-      const k = String(s.Day);
-      if (!m.has(k)) m.set(k, []);
-      m.get(k).push(s);
-    });
-    // normTime before comparing: StartTime is not always a string, and the old
-    // a.StartTime.localeCompare(...) threw when Sheets returned a Date.
-    m.forEach(list => list.sort(
-      (a, b) => normTime(a.StartTime).localeCompare(normTime(b.StartTime))));
-    return m;
-  }, [slots]);
-
-  const getBatchColor = (batchId) => {
+  const getBatchColor = useCallback((batchId) => {
     const idx = batchIndexById.get(String(batchId));
-    return COLORS[(idx === undefined ? 0 : idx) % COLORS.length] || COLORS[0];
-  };
+    return COLORS[(idx === undefined ? 0 : idx) % COLORS.length];
+  }, [batchIndexById]);
 
-  const getBatchName = (batchId) =>
-    batches.find(b => String(b.BatchID) === String(batchId))?.BatchName || 'Unknown';
+  const getBatchName = useCallback((batchId) => {
+    const idx = batchIndexById.get(String(batchId));
+    return idx === undefined ? 'Unknown' : (batches[idx]?.BatchName || 'Unknown');
+  }, [batchIndexById, batches]);
 
-  const getStudentsOfBatch = (b) => {
-    // FIX: String() wrap prevents crash when Sheets returns 0 or null for empty Students cell
-    const ids = String(b.Students || '').split(',').map(s => s.trim()).filter(Boolean);
-    return students.filter(s => ids.includes(String(s.StudentID)));
-  };
+  const getStudentsOfBatch = useCallback((b) => {
+    // String() wrap prevents a crash when Sheets returns 0 or null for an empty
+    // Students cell. Set lookup keeps the original students-order output.
+    const ids = new Set(String(b.Students || '').split(',').map(s => s.trim()).filter(Boolean));
+    if (ids.size === 0) return [];
+    return students.filter(s => ids.has(String(s.StudentID)));
+  }, [students]);
 
-  const getSlotsForDay = (day) => slotsByDay.get(day) || [];
+  const getSlotsForDay = useCallback((day) => slotsByDay.get(day) || [], [slotsByDay]);
 
   const assignFiltered = useMemo(() => {
-    if (!assignSearch) return students;
-    const q = assignSearch.toLowerCase();
+    const q = assignSearch.trim().toLowerCase();
+    if (!q) return students;
     return students.filter(s =>
       String(s.StudentName || '').toLowerCase().includes(q)
       || String(s.Course || '').toLowerCase().includes(q)
       || String(s.StudentID || '').toLowerCase().includes(q));
   }, [students, assignSearch]);
 
-  // O(1) membership instead of Array.includes per row while typing.
   const selectedSet = useMemo(() => new Set(selectedStudents.map(String)), [selectedStudents]);
 
-  const weekEnabledCount = weekRows.filter(r => r.enabled).length;
+  const weekEnabledCount = useMemo(() => weekRows.filter(r => r.enabled).length, [weekRows]);
 
   if (loading) {
     return (
@@ -588,18 +616,6 @@ export default function BatchesPage() {
         ))}
       </div>
 
-      {/* TEST 6: a failed load surfaces here with a retry, instead of leaving
-          the page silently empty or spinning forever. */}
-      {loadError && (
-        <div className="errbar" role="alert">
-          <span className="errtxt">{loadError}</span>
-          <button type="button" className="sc-btn sc-btn-secondary"
-            onClick={loadAll} disabled={loading}>
-            {loading ? 'Retrying...' : 'Retry'}
-          </button>
-        </div>
-      )}
-
       {/* ==================== TAB: BATCHES ==================== */}
       {tab === 'batches' && (
         <>
@@ -622,7 +638,7 @@ export default function BatchesPage() {
               {batches.map((b, i) => {
                 const color = COLORS[i % COLORS.length];
                 const batchStudents = getStudentsOfBatch(b);
-                const batchSlots = slotsByBatch.get(String(b.BatchID)) || [];
+                const batchSlots = slots.filter(s => String(s.BatchID) === String(b.BatchID));
 
                 return (
                   <div key={b.BatchID} className="bcard" style={{ animationDelay: `${Math.min(i, 10) * 55}ms` }}>
@@ -712,10 +728,6 @@ export default function BatchesPage() {
                         <button onClick={() => openAssign(b)} className="bbtn bbtn-tint"
                           style={{ border: `1px solid ${color}30`, background: `${color}10`, color }}>
                           Assign Students
-                        </button>
-                        {/* Primary path now: configure Mon-Sun and save once. */}
-                        <button onClick={() => openWeekSchedule(b)} className="bbtn bbtn-plain">
-                          Weekly Schedule
                         </button>
                         <button onClick={() => openNewSlot(b.BatchID)} className="bbtn bbtn-plain">
                           Add Class
@@ -917,21 +929,8 @@ export default function BatchesPage() {
 
       {/* ---- Create/Edit Batch Modal ---- */}
       <Modal open={showBatchModal} onClose={() => setShowBatchModal(false)}
-        title={editBatchId ? 'Edit Batch' : 'Create New Batch'}
-        footer={
-            // Pinned outside the scrolling body, so "Create Batch" is reachable
-            // at any screen height. form="batch-form" submits the form from
-            // outside it, which is what lets the actions leave the <form>.
-            <div className="facts">
-              <button type="button" className="sc-btn sc-btn-secondary grow"
-                onClick={() => setShowBatchModal(false)}>Cancel</button>
-              <button type="submit" form="batch-form" className="sc-btn sc-btn-primary grow"
-                disabled={saving}>
-                {saving ? 'Saving...' : editBatchId ? 'Update Batch' : 'Create Batch'}
-              </button>
-            </div>
-        }>
-        <form id="batch-form" onSubmit={saveBatch} className="fm">
+        title={editBatchId ? 'Edit Batch' : 'Create New Batch'}>
+        <form onSubmit={saveBatch} className="fm">
           <div className="f">
             <label className="fl">Batch Name *</label>
             <input className="sc-field" placeholder="e.g. JEE Morning Batch"
@@ -952,26 +951,17 @@ export default function BatchesPage() {
             <input className="sc-field" placeholder="Optional notes about this batch"
               value={batchForm.description} onChange={e => setBatchForm(p => ({ ...p, description: e.target.value }))} />
           </div>
+          <div className="facts">
+            <button type="button" className="sc-btn sc-btn-secondary grow" onClick={() => setShowBatchModal(false)}>Cancel</button>
+            <button type="submit" className="sc-btn sc-btn-primary grow" disabled={saving}>
+              {saving ? 'Saving...' : editBatchId ? 'Update Batch' : 'Create Batch'}
+            </button>
+          </div>
         </form>
       </Modal>
 
       {/* ---- Assign Students Modal ---- */}
       <Modal open={showAssignModal} onClose={() => setShowAssignModal(false)}
-        footer={
-            <div className="asg-foot">
-              <span className="asg-count">
-                {selectedStudents.length} student{selectedStudents.length !== 1 ? 's' : ''} selected
-              </span>
-              <div className="asg-acts">
-                <button className="sc-btn sc-btn-secondary"
-                  onClick={() => setShowAssignModal(false)}>Cancel</button>
-                <button className="sc-btn sc-btn-primary"
-                  onClick={saveAssignment} disabled={saving}>
-                  {saving ? 'Saving...' : 'Save Assignment'}
-                </button>
-              </div>
-            </div>
-        }
         title={`Assign Students \u2014 ${assignBatch?.BatchName || ''}`} size="lg">
         <div className="asg">
           <p className="asg-note">
@@ -995,7 +985,7 @@ export default function BatchesPage() {
               <p className="asg-none">No students match your search</p>
             ) : (
               assignFiltered.map(s => {
-                const checked = selectedSet.has(String(s.StudentID));
+                const checked = selectedStudents.includes(String(s.StudentID));
                 return (
                   <label key={s.StudentID} className={checked ? 'srow is-on' : 'srow'}>
                     <input type="checkbox" checked={checked}
@@ -1013,23 +1003,24 @@ export default function BatchesPage() {
             )}
           </div>
 
+          <div className="asg-foot">
+            <span className="asg-count">
+              {selectedStudents.length} student{selectedStudents.length !== 1 ? 's' : ''} selected
+            </span>
+            <div className="asg-acts">
+              <button className="sc-btn sc-btn-secondary" onClick={() => setShowAssignModal(false)}>Cancel</button>
+              <button className="sc-btn sc-btn-primary" onClick={saveAssignment} disabled={saving}>
+                {saving ? 'Saving...' : 'Save Assignment'}
+              </button>
+            </div>
+          </div>
         </div>
       </Modal>
 
       {/* ---- Add/Edit Schedule Slot Modal ---- */}
       <Modal open={showSlotModal} onClose={() => setShowSlotModal(false)}
-        title={editSlotId ? 'Edit Class' : 'Add Class to Schedule'}
-        footer={
-            <div className="facts">
-              <button type="button" className="sc-btn sc-btn-secondary grow"
-                onClick={() => setShowSlotModal(false)}>Cancel</button>
-              <button type="submit" form="slot-form" className="sc-btn sc-btn-primary grow"
-                disabled={saving}>
-                {saving ? 'Saving...' : editSlotId ? 'Update Class' : 'Add to Schedule'}
-              </button>
-            </div>
-        }>
-        <form id="slot-form" onSubmit={saveSlot} className="fm">
+        title={editSlotId ? 'Edit Class' : 'Add Class to Schedule'}>
+        <form onSubmit={saveSlot} className="fm">
           <div className="f">
             <label className="fl">Batch *</label>
             <select className="sc-field" value={slotForm.batchId}
@@ -1064,69 +1055,13 @@ export default function BatchesPage() {
             <input className="sc-field" placeholder="e.g. Physics, Mathematics"
               value={slotForm.subject} onChange={e => setSlotForm(p => ({ ...p, subject: e.target.value }))} />
           </div>
+          <div className="facts">
+            <button type="button" className="sc-btn sc-btn-secondary grow" onClick={() => setShowSlotModal(false)}>Cancel</button>
+            <button type="submit" className="sc-btn sc-btn-primary grow" disabled={saving}>
+              {saving ? 'Saving...' : editSlotId ? 'Update Class' : 'Add to Schedule'}
+            </button>
+          </div>
         </form>
-      </Modal>
-
-      {/* ---- Weekly Schedule Modal: configure Mon-Sun, save ONCE ---- */}
-      <Modal open={showWeekModal} onClose={() => setShowWeekModal(false)}
-        title={`Weekly Schedule \u2014 ${weekBatch?.BatchName || ''}`} size="lg"
-        footer={
-            <div className="wk-foot">
-              <span className="wk-count">
-                {weekEnabledCount} class{weekEnabledCount !== 1 ? 'es' : ''} this week
-              </span>
-              <div className="wk-acts">
-                <button type="button" className="sc-btn sc-btn-secondary"
-                  onClick={() => setShowWeekModal(false)}>Cancel</button>
-                {/* disabled={saving} is the visible half of the double-submit
-                    guard; savingRef is the half that actually wins the race. */}
-                <button type="button" className="sc-btn sc-btn-primary"
-                  onClick={saveWeekSchedule} disabled={saving}>
-                  {saving ? 'Saving...' : 'Save Weekly Schedule'}
-                </button>
-              </div>
-            </div>
-        }>
-        <div className="wk">
-          <p className="wk-note">
-            Tick every day this batch meets, set the times, then save once.
-            Unticking a day removes that class when you save.
-          </p>
-
-          {weekRows.map(r => (
-            <div key={r.day} className={r.enabled ? 'wkrow is-on' : 'wkrow'}>
-              <label className="wkday" htmlFor={`en-${r.day}`}>
-                <input
-                  id={`en-${r.day}`}
-                  type="checkbox"
-                  checked={r.enabled}
-                  onChange={e => setWeekRow(r.day, { enabled: e.target.checked })}
-                />
-                <span className="wkday-n">{r.day}</span>
-              </label>
-
-              {r.enabled ? (
-                <div className="wktimes">
-                  <input id={`st-${r.day}`} type="time" className="sc-field"
-                    aria-label={`${r.day} start time`}
-                    value={r.startTime}
-                    onChange={e => setWeekRow(r.day, { startTime: e.target.value })} />
-                  <input id={`et-${r.day}`} type="time" className="sc-field"
-                    aria-label={`${r.day} end time`}
-                    value={r.endTime}
-                    onChange={e => setWeekRow(r.day, { endTime: e.target.value })} />
-                  <input id={`sb-${r.day}`} type="text" className="sc-field wksub"
-                    aria-label={`${r.day} subject`}
-                    placeholder="Subject (optional)"
-                    value={r.subject}
-                    onChange={e => setWeekRow(r.day, { subject: e.target.value })} />
-                </div>
-              ) : (
-                <span className="wknone">No class</span>
-              )}
-            </div>
-          ))}
-        </div>
       </Modal>
 
       <style jsx>{`
@@ -1508,15 +1443,12 @@ export default function BatchesPage() {
         /* ---- Assign modal ---- */
         .asg { display: flex; flex-direction: column; gap: 13px; }
         .asg-note { margin: 0; font-size: 0.8125rem; color: ${T.muted}; }
-        /* No max-height / overflow here on purpose. A scroller nested inside
-           the dialog's own scroller is a touch trap on mobile - the inner list
-           swallows the gesture and the sheet feels stuck. The Modal body is now
-           the single scroll container, so this list just grows and the body
-           scrolls it. (TEST 2) */
         .asg-list {
           display: flex;
           flex-direction: column;
           gap: 6px;
+          max-height: 20rem;
+          overflow-y: auto;
           padding: 2px;
         }
         .asg-none { margin: 0; padding: 20px; text-align: center; color: ${T.muted}; }
@@ -1570,13 +1502,13 @@ export default function BatchesPage() {
           background: ${T.hover};
           border-radius: 999px;
         }
-        /* Lives in the Modal footer now, which already supplies the divider and
-           the padding - so no border-top/padding-top here. */
         .asg-foot {
           display: flex;
           align-items: center;
           justify-content: space-between;
           gap: 12px;
+          padding-top: 13px;
+          border-top: 1px solid ${T.border};
         }
         .asg-count { font-size: 0.8125rem; color: ${T.muted}; }
         .asg-acts { display: flex; gap: 8px; }
@@ -1588,74 +1520,6 @@ export default function BatchesPage() {
         .fl { margin-bottom: 6px; font-size: 0.8125rem; font-weight: 600; color: #374151; }
         .facts { display: flex; gap: 10px; padding-top: 2px; }
         .grow { flex: 1; }
-
-        /* ---- Weekly schedule editor ---- */
-        .wk { display: flex; flex-direction: column; gap: 10px; }
-        .wk-note { margin: 0 0 2px; font-size: 0.8125rem; color: ${T.muted}; }
-        .wkrow {
-          display: flex;
-          flex-wrap: wrap;
-          align-items: center;
-          gap: 10px 12px;
-          padding: 10px 12px;
-          border: 1px solid ${T.border};
-          border-radius: 12px;
-          background: #fff;
-          transition: border-color 160ms ease, background 160ms ease;
-        }
-        .wkrow.is-on { border-color: ${T.accentRing}; background: ${T.accentTint}; }
-        .wkday {
-          display: flex;
-          align-items: center;
-          gap: 9px;
-          flex: 0 0 auto;
-          min-width: 8.5rem;
-          cursor: pointer;
-        }
-        .wkday-n { font-size: 0.875rem; font-weight: 600; color: ${T.text}; }
-        .wktimes {
-          display: grid;
-          grid-template-columns: minmax(0, 7rem) minmax(0, 7rem) minmax(0, 1fr);
-          gap: 8px;
-          flex: 1 1 18rem;
-          /* min-width:0 lets the grid shrink inside the flex row instead of
-             forcing the sheet wider than the screen. */
-          min-width: 0;
-        }
-        .wksub { min-width: 0; }
-        .wknone { flex: 1 1 auto; font-size: 0.8125rem; color: ${T.muted}; }
-        .wk-foot {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-        }
-        .wk-count { font-size: 0.8125rem; color: ${T.muted}; }
-        .wk-acts { display: flex; gap: 8px; }
-
-        @media (max-width: 560px) {
-          /* Stack the time controls rather than letting them overflow the sheet. */
-          .wktimes { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); flex-basis: 100%; }
-          .wksub { grid-column: 1 / -1; }
-          .wkday { min-width: 100%; }
-          .wk-foot { flex-direction: column; align-items: stretch; }
-          .wk-acts > :global(button) { flex: 1; }
-        }
-
-        /* ---- Load error banner ---- */
-        .errbar {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          flex-wrap: wrap;
-          gap: 10px;
-          margin: 0 0 14px;
-          padding: 11px 14px;
-          background: #fef2f2;
-          border: 1px solid #fecaca;
-          border-radius: 12px;
-        }
-        .errtxt { font-size: 0.8125rem; color: #991b1b; }
 
         /* ---- Responsive ---- */
         @media (max-width: 1080px) {

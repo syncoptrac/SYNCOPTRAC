@@ -1,8 +1,8 @@
 import '../styles/globals.css';
+import Head from 'next/head';
 import { Toaster } from 'react-hot-toast';
 import { useRouter } from 'next/router';
 import { useState, useEffect, useRef, useCallback } from 'react';
-import Head from 'next/head';
 
 // ── Cinematic page progress bar ────────────────────────────────────────
 function ProgressBar({ active }) {
@@ -158,18 +158,22 @@ export default function App({ Component, pageProps }) {
 
   return (
     <>
-      {/*
-        ROOT CAUSE of the "tiny text / giant logo for a fraction of a second"
-        flash: the app shipped no viewport meta at all. Without it a mobile
-        browser lays the first frame out at ~980px CSS pixels and then rescales
-        once layout settles - which is exactly what a giant logo and
-        misplaced, undersized text look like. It was never a stylesheet timing
-        problem, so no amount of hiding content until CSS loads would fix it.
+      {/* The app had NO viewport meta tag anywhere, which caused two separate
+          bugs that both looked like "CSS loaded late":
 
-        viewport-fit=cover additionally makes env(safe-area-inset-*) resolve to
-        real values; they were silently returning 0 before, which is why the
-        modal footers had no gesture-bar clearance on iOS.
-      */}
+          1. Without `width=device-width` a mobile browser lays the page out at
+             a ~980px desktop width and then scales the result down to fit.
+             That is the "text appears tiny / logo appears huge / content in the
+             wrong position for a fraction of a second" flash - it is not a
+             stylesheet timing problem at all, it is the layout viewport being
+             wrong until the browser finishes rescaling.
+          2. Without `viewport-fit=cover`, every `env(safe-area-inset-*)` value
+             resolves to 0, so the safe-area padding the dock and the modals ask
+             for silently did nothing on notched devices.
+
+          It lives here rather than in _document.js because Next.js warns about
+          viewport tags in _document, and next/head still server-renders it into
+          the initial HTML - so it is correct on the very first paint. */}
       <Head>
         <meta
           name="viewport"

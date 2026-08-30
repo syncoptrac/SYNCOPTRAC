@@ -1,28 +1,54 @@
 // Premium dialog shell used by Students, Enquiries, Fees and Batches.
 //
-// API IS BACKWARDS COMPATIBLE: { open, onClose, title, children, size } behave
-// exactly as before, so every existing caller keeps working untouched.
-// `footer` is new and optional - when supplied, the node is pinned OUTSIDE the
-// scrolling region so its buttons can never be pushed off screen.
+// PUBLIC API (backwards compatible):
+//   { open, onClose, title, children, size }   <- every existing caller, unchanged
+//   { ..., footer }                            <- NEW, optional pinned action area
 //
-// Layout contract (this is the actual fix for "buttons go outside the screen"):
-//   .panel is a flex column that is never taller than the viewport
-//   .head and .foot are flex:none
-//   .body is the ONLY scroll container (flex:1 + min-height:0 + overflow-y:auto)
-// Because the panel is bounded by the viewport rather than by its content, the
-// action row is always on screen - which also means the fixed bottom dock has
-// nothing to cover, since the sheet no longer extends underneath it.
+// WHY THIS FILE CHANGED - the "buttons go outside the screen" bug
+// ---------------------------------------------------------------
+// Old model: `.panel` was a single scroll container (`overflow-y:auto`) and the
+// action row lived inside that scrolling content. Two consequences:
 //
-// Heights use dvh with a vh fallback. On mobile browsers vh resolves to the
-// LARGE viewport (as if the URL bar were hidden); measuring against it while
-// the URL bar is actually visible is precisely what pushed the buttons under
-// the fold. dvh tracks the real, currently-visible height.
-import { useEffect, useRef } from 'react';
+//   1. The action row could be scrolled out of reach, and on a short viewport
+//      it started below the fold with nothing left to scroll against.
+//   2. `max-height: 92vh` on mobile is measured against the LARGE viewport
+//      (the height the page would have with the URL bar collapsed). While the
+//      URL bar is actually visible, 92vh is taller than what you can see, so
+//      the bottom edge of the sheet - buttons included - sits physically
+//      off-screen. `padding-bottom: env(safe-area-inset-bottom)` did not help
+//      because it was applied to the scrolling box (so it became scroll
+//      content, not reserved space).
+//
+// New model: `.panel` is a three-region flex COLUMN.
+//   head -> flex: none                                          always visible
+//   body -> flex: 1 1 auto; min-height: 0; overflow-y: auto      the ONLY scroller
+//   foot -> flex: none                                          always visible
+//
+// and the height cap uses `dvh` (dynamic viewport height) with a `vh` fallback,
+// so the dialog tracks the area that is genuinely visible as browser chrome
+// shows/hides and as the on-screen keyboard opens.
+//
+// No `overflow-x: hidden`, no negative margins, no magic pixel offsets.
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 const MAXW = { sm: '25rem', md: '34rem', lg: '44rem', xl: '58rem' };
 
-export default function Modal({ open, onClose, title, children, size = 'md', footer = null }) {
+export default function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  size = 'md',
+  footer = null,
+}) {
   const panelRef = useRef(null);
+
+  // The dialog is portalled to <body>, which only exists in the browser, so the
+  // first client render has to match the server's (null) before we portal or
+  // Next.js reports a hydration mismatch.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
 
   // Escape to close + scroll lock. Both clean up on unmount.
   useEffect(() => {
@@ -49,9 +75,30 @@ export default function Modal({ open, onClose, title, children, size = 'md', foo
     return () => clearTimeout(t);
   }, [open]);
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
-  return (
+  // WHY THIS IS PORTALLED - the "buttons hidden behind the bottom nav" bug
+  // ----------------------------------------------------------------------
+  // InstituteLayout and AdminLayout both lay the shell out like this:
+  //
+  //   .app-shell > header,
+  //   .app-shell > main,
+  //   .app-shell > nav { position: relative; z-index: 1; }
+  //
+  // The dock is NOT position:fixed - it is an in-flow flex item at the bottom
+  // of a 100dvh shell, a sibling of `main`. `main` and `nav` therefore sit in
+  // the same stacking context at the SAME z-index, and `nav` comes later in
+  // the DOM, so the dock paints above everything inside `main`.
+  //
+  // A dialog rendered inside `main` is sealed into main's stacking context:
+  // its z-index only orders it against its siblings *within* main. No value -
+  // 60, 999, 2147483647 - can lift it above the dock, because the comparison
+  // never happens at that level. Raising the number is the hack; leaving the
+  // subtree is the fix.
+  //
+  // Portalling to <body> puts the dialog outside .app-shell entirely, so it
+  // competes at the root level and covers the dock on every page that uses it.
+  return createPortal(
     <div className="host" role="dialog" aria-modal="true" aria-label={title}>
       <div className="scrim" onClick={onClose} />
 
@@ -81,18 +128,21 @@ export default function Modal({ open, onClose, title, children, size = 'md', foo
         .host {
           position: fixed;
           inset: 0;
-          /* Bound to the *small* viewport so the sheet is measured against what
-             is actually visible, not the URL-bar-expanded height. */
+          /* Explicit height so the centring math runs against the *visible*
+             area. vh first as the fallback for engines without dvh. */
           height: 100vh;
           height: 100dvh;
-          z-index: 60;
+          /* Above the shell, both login pages (100) and the bespoke overlays in
+             admin/institutes (70). Only toasts intentionally sit higher. */
+          z-index: 1000;
           display: flex;
           align-items: center;
           justify-content: center;
           padding: 20px;
-          /* InstituteLayout animates every direct child of <main>. Without this
-             the dialog replays that entry animation and visibly flashes at the
-             wrong size when it opens. */
+          /* InstituteLayout applies a page-entry animation to every direct
+             child of the content column (.app-shell > main > div > *). Without
+             this the dialog replayed that entry animation on each open, which
+             is what made modals look like they "flashed at the wrong size". */
           animation: none;
         }
         .scrim {
@@ -104,12 +154,12 @@ export default function Modal({ open, onClose, title, children, size = 'md', foo
         .panel {
           position: relative;
           width: 100%;
-          /* Never taller than .host, which is itself the visible viewport. */
+          /* 100% of the host content box == viewport height minus host padding. */
           max-height: 100%;
           min-height: 0;
           display: flex;
           flex-direction: column;
-          overflow: hidden;
+          overflow: hidden; /* the PANEL never scrolls - .body does */
           background: #ffffff;
           border: 1px solid #e5e7eb;
           border-radius: 20px;
@@ -117,53 +167,52 @@ export default function Modal({ open, onClose, title, children, size = 'md', foo
           animation: mPanel 300ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
         /* Drag affordance: only meaningful in the mobile sheet layout. */
-        .grip { display: none; }
+        .grip { display: none; flex: none; }
+
         .head {
           flex: none;
           display: flex;
           align-items: center;
           justify-content: space-between;
           gap: 12px;
-          padding: 16px 18px 14px;
+          padding: 18px 18px 14px;
           background: #ffffff;
           border-bottom: 1px solid #eef2f7;
         }
         .title {
           margin: 0;
-          font-size: 1rem;
+          font-size: 1.0625rem;
           font-weight: 700;
           letter-spacing: -0.01em;
           color: #111827;
-          /* Long titles ("Assign Students - JEE Morning Batch") must not force
-             the header wider than the panel on a 320px screen. */
           min-width: 0;
           overflow: hidden;
           text-overflow: ellipsis;
-          white-space: nowrap;
         }
         .close {
           flex: none;
+          width: 44px;
+          height: 44px;
+          margin: -10px -10px -10px 0;
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          width: 44px;
-          height: 44px;
-          margin: -6px -8px -6px 0;
-          color: #6b7280;
-          background: transparent;
           border: 0;
-          border-radius: 12px;
+          background: transparent;
+          border-radius: 999px;
+          color: #6b7280;
           cursor: pointer;
           transition: background 160ms ease, color 160ms ease;
         }
-        .close:hover { background: #f3f4f6; color: #111827; }
-        .close:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.28); }
+        .close:hover { background: #eff6ff; color: #111827; }
+        .close:focus-visible {
+          outline: none;
+          box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.28);
+        }
+
         .body {
-          /* The one and only scroll container in the dialog. min-height:0 is
-             what lets a flex child shrink below its content height - without it
-             the panel grows past the viewport instead of scrolling. */
           flex: 1 1 auto;
-          min-height: 0;
+          min-height: 0; /* required, or the flex child refuses to shrink */
           overflow-y: auto;
           overscroll-behavior: contain;
           -webkit-overflow-scrolling: touch;
@@ -210,8 +259,7 @@ export default function Modal({ open, onClose, title, children, size = 'md', foo
           .foot {
             padding: 12px 16px;
             /* Reserved space, not scroll content: keeps the action row clear of
-               the iOS home indicator / Android gesture bar. Resolves to a real
-               value now that _app.js ships viewport-fit=cover. */
+               the iOS home indicator / Android gesture bar. */
             padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
           }
           /* Same clearance when the dialog has no dedicated footer. */
@@ -238,6 +286,7 @@ export default function Modal({ open, onClose, title, children, size = 'md', foo
           .scrim, .panel { animation: none; }
         }
       `}</style>
-    </div>
+    </div>,
+    document.body
   );
 }

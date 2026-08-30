@@ -1233,35 +1233,35 @@ function deleteSlot(slotId) {
   return { success: true, message: 'Slot deleted' };
 }
 
-/**
- * Save an entire weekly timetable for one batch in a single operation.
- *
- * Diff-based on purpose:
- *   - a day that already exists KEEPS its existing SlotID, so changing a time
- *     is an update, never a delete+insert (no duplicates, no orphans)
- *   - a day that is no longer wanted is dropped
- *   - a brand new day gets a fresh row
- *   - rows belonging to OTHER batches are passed through untouched
- *
- * The Batches sheet is never written here, so Teacher / Course / Students are
- * structurally safe from this call - teacher info lives on the batch row, not
- * on a slot.
- *
- * doPost already holds a script lock around this, so the read-diff-write cycle
- * cannot interleave with another writer.
- */
+// Saves an entire week for one batch in a single pass. The per-slot actions
+// each rewrote the sheet, so saving five days meant five executions queued
+// behind the 8s script lock. This does one read, one diff, one write.
+//
+// Semantics:
+//   - day present in `days`  -> created, or updated in place if times changed,
+//     KEEPING its existing SlotID so nothing downstream breaks
+//   - day absent from `days` -> that batch's row for that day is removed
+//   - every other batch      -> passed through completely untouched
+// The Batches sheet is never written, so Teacher/Course survive verbatim.
 function saveBatchSchedule(body) {
   const batchId = body && body.batchId;
   if (!batchId) return { success: false, error: 'batchId is required' };
+  const days = (body && body.days) || [];
+  if (!Array.isArray(days)) return { success: false, error: 'days must be an array' };
 
-  const days = (body && Array.isArray(body.days)) ? body.days : [];
-  const sheet = getSheet(SHEETS.SCHEDULE);
-  const data = sheetData_(sheet);
-  if (!data || data.length === 0) {
-    return { success: false, error: 'Schedule sheet is empty' };
+  // Collapse to one entry per day; a duplicated day means the last one wins.
+  const wanted = {};
+  const order = [];
+  for (var i = 0; i < days.length; i++) {
+    var d = days[i];
+    if (!d || !d.day) continue;
+    if (!wanted[d.day]) order.push(d.day);
+    wanted[d.day] = d;
   }
 
-  const headers = data[0];
+  const sheet = getSheet(SHEETS.SCHEDULE);
+  const rows = sheetData_(sheet);
+  const headers = rows[0] || [];
   const cSlot  = headers.indexOf('SlotID');
   const cBatch = headers.indexOf('BatchID');
   const cDay   = headers.indexOf('Day');
@@ -1272,114 +1272,79 @@ function saveBatchSchedule(body) {
     return { success: false, error: 'Schedule sheet is missing required columns' };
   }
 
-  // Collapse the payload by day first, so a client that accidentally sends the
-  // same day twice can never produce two rows for it. Last one wins.
-  const wanted = {};
-  const order = [];
-  for (var i = 0; i < days.length; i++) {
-    const d = days[i];
-    if (!d || !d.day) continue;
-    const key = String(d.day);
-    if (!wanted[key]) order.push(key);
-    wanted[key] = {
-      startTime: d.startTime || '',
-      endTime:   d.endTime || '',
-      subject:   d.subject || ''
-    };
-  }
-
-  // generateId() is time+random and CAN collide inside one execution, so track
-  // every id already present and every id minted in this pass.
+  // Pre-scan every SlotID so a generated id cannot collide with an existing one.
   const usedIds = {};
-  for (var r0 = 1; r0 < data.length; r0++) {
-    const existingId = data[r0][cSlot];
-    if (existingId) usedIds[String(existingId)] = true;
+  for (var r = 1; r < rows.length; r++) {
+    var sid = rows[r][cSlot];
+    if (sid) usedIds[String(sid)] = true;
   }
 
-  // NOTE: rewriteRows_ writes starting at row 2, so `kept` holds DATA ROWS ONLY.
+  // NOTE: rewriteRows_ writes starting at row 2, so 'kept' holds DATA ROWS ONLY.
   const kept = [];
   const seen = {};
-  var updated = 0;
-  var removed = 0;
+  var created = 0, updated = 0, removed = 0, changed = false;
 
-  for (var r = 1; r < data.length; r++) {
-    const row = data[r];
-    if (!row || row.join('') === '') continue;
-
-    // Other batches are none of this operation's business.
-    if (String(row[cBatch]) !== String(batchId)) { kept.push(row); continue; }
-
-    const day = String(row[cDay]);
-    const want = wanted[day];
-
-    // Unselected day, or a pre-existing duplicate row for a day we already
-    // matched: drop it. This is what makes "remove Friday" work, and what
-    // quietly heals duplicates created by the old one-at-a-time flow.
-    if (!want || seen[day]) { removed++; continue; }
+  for (var r2 = 1; r2 < rows.length; r2++) {
+    var row = rows[r2];
+    if (!row || row.join('') === '') continue;        // skip blank padding rows
+    if (String(row[cBatch]) !== String(batchId)) {    // another batch - untouched
+      kept.push(row);
+      continue;
+    }
+    var day = String(row[cDay]);
+    var want = wanted[day];
+    if (!want || seen[day]) {                         // unselected, or a duplicate row
+      removed++;
+      changed = true;
+      continue;
+    }
     seen[day] = true;
-
-    const next = row.slice();
-    var changed = false;
-    // Compare through formatTime so a Sheets-coerced Date does not read as a
-    // change against the identical "09:00" string coming from the client.
-    if (cStart !== -1 && formatTime(row[cStart]) !== formatTime(want.startTime)) {
-      next[cStart] = want.startTime; changed = true;
+    var newStart = formatTime(want.startTime);
+    var newEnd   = formatTime(want.endTime);
+    var newSub   = want.subject || '';
+    var oldSub   = cSub === -1 ? '' : String(row[cSub] || '');
+    if (formatTime(row[cStart]) !== newStart ||
+        formatTime(row[cEnd])   !== newEnd   ||
+        oldSub !== String(newSub)) {
+      if (cStart !== -1) row[cStart] = newStart;
+      if (cEnd   !== -1) row[cEnd]   = newEnd;
+      if (cSub   !== -1) row[cSub]   = newSub;
+      updated++;
+      changed = true;
     }
-    if (cEnd !== -1 && formatTime(row[cEnd]) !== formatTime(want.endTime)) {
-      next[cEnd] = want.endTime; changed = true;
-    }
-    if (cSub !== -1 && String(row[cSub] || '') !== String(want.subject)) {
-      next[cSub] = want.subject; changed = true;
-    }
-    if (changed) updated++;
-    kept.push(next);
+    kept.push(row);                                   // keeps the original SlotID
   }
 
-  // Whatever is still unseen is a brand new class for this batch.
-  var created = 0;
-  for (var o = 0; o < order.length; o++) {
-    const day2 = order[o];
+  // Selected days with no existing row become new rows.
+  for (var k = 0; k < order.length; k++) {
+    var day2 = order[k];
     if (seen[day2]) continue;
-    const want2 = wanted[day2];
-
-    const row2 = [];
-    for (var c = 0; c < headers.length; c++) row2.push('');
-
+    var want2 = wanted[day2];
     var id = generateId('SLT');
     var guard = 0;
     while (usedIds[id] && guard < 100) { guard++; id = generateId('SLT') + guard; }
     usedIds[id] = true;
-
-    row2[cSlot]  = id;
-    row2[cBatch] = batchId;
-    row2[cDay]   = day2;
-    if (cStart !== -1) row2[cStart] = want2.startTime;
-    if (cEnd   !== -1) row2[cEnd]   = want2.endTime;
-    if (cSub   !== -1) row2[cSub]   = want2.subject;
-
-    kept.push(row2);
+    var fresh = [];
+    for (var c = 0; c < headers.length; c++) fresh.push('');
+    fresh[cSlot]  = id;
+    fresh[cBatch] = batchId;
+    fresh[cDay]   = day2;
+    if (cStart !== -1) fresh[cStart] = formatTime(want2.startTime);
+    if (cEnd   !== -1) fresh[cEnd]   = formatTime(want2.endTime);
+    if (cSub   !== -1) fresh[cSub]   = want2.subject || '';
+    kept.push(fresh);
     created++;
+    changed = true;
   }
 
-  // Nothing actually differs - skip the write so we do not churn the cache or
-  // burn quota on a no-op save.
-  if (created === 0 && updated === 0 && removed === 0) {
-    return {
-      success: true, created: 0, updated: 0, removed: 0,
-      total: order.length, message: 'Weekly schedule already up to date'
-    };
+  if (!changed) {
+    return { success: true, created: 0, updated: 0, removed: 0,
+             total: order.length, message: 'Weekly schedule already up to date' };
   }
 
   rewriteRows_(sheet, kept);
-
-  return {
-    success: true,
-    created: created,
-    updated: updated,
-    removed: removed,
-    total: order.length,
-    message: 'Weekly schedule saved'
-  };
+  return { success: true, created: created, updated: updated, removed: removed,
+           total: order.length, message: 'Weekly schedule saved' };
 }
 
 // ─── ONE-TIME SETUP ───────────────────────────────────────────
