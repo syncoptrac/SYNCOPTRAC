@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/router';
 import InstituteLayout from '../../components/layout/InstituteLayout';
 import api, { getUser, notifyError, errorMessage } from '../../lib/api';
@@ -74,29 +74,39 @@ export default function AttendancePage() {
     setAttendance({});
   }, [date]);
 
+  // Monotonic guard: switching dates quickly could let an older response land
+  // after a newer one and show the wrong day's records.
+  const histSeq = useRef(0);
+
   const fetchHistory = useCallback(async () => {
+    const seq = ++histSeq.current;
     setHistLoading(true);
     // PERF/UX: keep the previous rows visible while reloading instead of
     // blanking the table, which read as "slow" even when it wasn't.
     try {
       const res = await api.get(`/api/sheets/attendance?date=${histDate}`);
+      if (seq !== histSeq.current) return; // superseded by a newer date
       const data = res.data.data || [];
       setHistory(data);
       if (data.length === 0) {
         toast('No records found for this date', { icon: '\u2139\uFE0F' });
       }
     } catch (err) {
+      if (seq !== histSeq.current) return;
       const msg = err.response?.data?.error || err.message || 'Failed to load attendance history';
       toast.error(msg);
     } finally {
-      setHistLoading(false);
+      // Superseded requests leave the flag alone - the newer one owns it.
+      if (seq === histSeq.current) setHistLoading(false);
     }
   }, [histDate]);
 
-  // Fetch history whenever date changes OR when switching to history tab
+  // Fetch history whenever the date changes OR when switching to the history
+  // tab. histDate is already a dependency of fetchHistory, so listing it here
+  // as well was redundant.
   useEffect(() => {
     if (mode === 'history') fetchHistory();
-  }, [mode, histDate, fetchHistory]);
+  }, [mode, fetchHistory]);
 
   const toggleAll = (status) => {
     const att = {};

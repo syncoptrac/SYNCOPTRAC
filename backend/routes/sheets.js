@@ -654,7 +654,7 @@ router.post('/attendance', requireInstitute, async (req, res) => {
   }
 });
 
-// ─── FEES ─────────────────────────────────────────────────────────────────────
+// ─── FEES ────────────────────────────────────────────────────────────────���────
 
 router.get('/fees', requireInstitute, async (req, res) => {
   try {
@@ -863,6 +863,34 @@ router.post('/schedule', requireInstitute, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to add slot' });
+  }
+});
+
+// One-shot weekly timetable save.
+//
+// Deliberately a NEW route rather than a change to the per-slot ones: every
+// existing schedule endpoint keeps working exactly as before. The whole week is
+// handed to Apps Script so the create/update/delete diff happens inside ONE
+// locked execution. Doing it here as N sequential calls would be slower (Apps
+// Script runs one execution per project at a time) and could half-fail, leaving
+// duplicate or orphaned rows behind.
+router.put('/schedule/batch/:bid', requireInstitute, async (req, res) => {
+  try {
+    if (!Array.isArray(req.body && req.body.days)) {
+      return res.status(400).json({ error: 'days must be an array' });
+    }
+    const id = req.user.id;
+    const appsScriptUrl = await resolveAppsScriptUrl(req.user);
+    const data = await proxyToAppsScript(appsScriptUrl, 'POST', {
+      action: 'saveBatchSchedule',
+      batchId: req.params.bid,
+      days: req.body.days
+    });
+    bustCache(id);
+    respond(res, data);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to save weekly schedule' });
   }
 });
 

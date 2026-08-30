@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import AdminLayout from '../../components/layout/AdminLayout';
 import CountUp from '../../components/ui/CountUp';
@@ -49,6 +49,12 @@ export default function AdminDashboard() {
   });
   const [monthRevenue, setMonthRevenue] = useState(null);
   const [monthLoading, setMonthLoading] = useState(false);
+  // Gates the revenue request until the auth check has passed. Without this an
+  // unauthenticated visitor still fired a GET while being redirected away.
+  const [authed, setAuthed] = useState(false);
+  // Monotonic guard: clicking through months quickly could let an older
+  // response land after a newer one and display the wrong month's figure.
+  const revenueSeq = useRef(0);
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [pickerYear, setPickerYear] = useState(() => new Date().getFullYear());
   const router = useRouter();
@@ -67,10 +73,16 @@ export default function AdminDashboard() {
   useEffect(() => {
     const u = getUser();
     if (!u || u.role !== 'admin') { router.replace('/admin/login'); return; }
+    setAuthed(true);
     fetchData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => { fetchMonthRevenue(selectedMonth); }, [selectedMonth]);
+  useEffect(() => {
+    if (!authed) return;
+    fetchMonthRevenue(selectedMonth);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMonth, authed]);
 
   useEffect(() => {
     if (!showMonthPicker) return;
@@ -85,12 +97,18 @@ export default function AdminDashboard() {
   }, [showMonthPicker]);
 
   const fetchMonthRevenue = async (month) => {
+    const seq = ++revenueSeq.current;
     setMonthLoading(true);
     try {
       const res = await api.get(`/api/admin/revenue?month=${month}`);
-      setMonthRevenue(res.data);
-    } catch { setMonthRevenue(null); }
-    finally { setMonthLoading(false); }
+      // Only the newest request may write; a slower earlier one is discarded.
+      if (seq === revenueSeq.current) setMonthRevenue(res.data);
+    } catch {
+      if (seq === revenueSeq.current) setMonthRevenue(null);
+    } finally {
+      // Superseded requests leave the flag alone - the newer one owns it.
+      if (seq === revenueSeq.current) setMonthLoading(false);
+    }
   };
 
   const fetchData = async () => {

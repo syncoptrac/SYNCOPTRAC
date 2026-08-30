@@ -2,6 +2,7 @@ import '../styles/globals.css';
 import { Toaster } from 'react-hot-toast';
 import { useRouter } from 'next/router';
 import { useState, useEffect, useRef, useCallback } from 'react';
+import Head from 'next/head';
 
 // ── Cinematic page progress bar ────────────────────────────────────────
 function ProgressBar({ active }) {
@@ -157,6 +158,25 @@ export default function App({ Component, pageProps }) {
 
   return (
     <>
+      {/*
+        ROOT CAUSE of the "tiny text / giant logo for a fraction of a second"
+        flash: the app shipped no viewport meta at all. Without it a mobile
+        browser lays the first frame out at ~980px CSS pixels and then rescales
+        once layout settles - which is exactly what a giant logo and
+        misplaced, undersized text look like. It was never a stylesheet timing
+        problem, so no amount of hiding content until CSS loads would fix it.
+
+        viewport-fit=cover additionally makes env(safe-area-inset-*) resolve to
+        real values; they were silently returning 0 before, which is why the
+        modal footers had no gesture-bar clearance on iOS.
+      */}
+      <Head>
+        <meta
+          name="viewport"
+          content="width=device-width, initial-scale=1, viewport-fit=cover"
+        />
+      </Head>
+
       <ProgressBar active={transitioning} />
       <RouteVeil state={veil} />
 
