@@ -179,6 +179,14 @@ html, body {
 html {
   height: -webkit-fill-available;
 }
+:root {
+  /* Height of the fixed bottom dock, republished by LiquidDock from its own
+     measured box (see components/ui/LiquidDock.js). Stays 0px on pages that
+     render no dock, so overlays there reserve nothing.
+     NOTE: the published value already contains env(safe-area-inset-bottom). */
+  --sc-dock-h: 0px;
+}
+
 .app-shell {
   height: 100vh;
   height: 100dvh;

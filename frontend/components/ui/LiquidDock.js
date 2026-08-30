@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 
@@ -41,6 +41,9 @@ const HOVER = '#9fd8f5';
 const DANGER_IDLE = 'rgba(248, 113, 113, 0.55)';
 const DANGER = '#f87171';
 
+// useLayoutEffect logs an SSR warning in Next; this component is pre-rendered.
+const useIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
+
 const LogoutIcon = (
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
@@ -55,6 +58,49 @@ export default function LiquidDock({ items = [], onLogout, onItemHover }) {
   const rafRef = useRef(null);
   const pointerFine = useRef(false);
   const reduceMotion = useRef(false);
+  const navRef = useRef(null);
+
+  // Publish the dock's real rendered height as --sc-dock-h so overlays can keep
+  // clear of it.
+  //
+  // THIS IS MEASUREMENT ONLY. Nothing here moves, resizes, restyles, re-renders
+  // or otherwise touches the dock - it only reports how tall the dock already
+  // is. The bar's geometry, material and behaviour are byte-for-byte unchanged.
+  //
+  // The nav carries padding-bottom: env(safe-area-inset-bottom), so the value
+  // published here ALREADY INCLUDES the safe-area inset. Consumers must take a
+  // max() against env(), never a sum, or the inset gets counted twice.
+  useIsoLayoutEffect(() => {
+    const el = navRef.current;
+    if (!el) return;
+    const root = document.documentElement;
+
+    // Runs before paint, so a dialog opening on this same frame is laid out
+    // against the correct value and never visibly jumps.
+    const publish = () => {
+      const h = Math.round(el.getBoundingClientRect().height);
+      root.style.setProperty('--sc-dock-h', `${h}px`);
+    };
+    publish();
+
+    // Keeps up with orientation changes, dynamic browser toolbars collapsing,
+    // and the safe-area inset resolving a beat late on iOS.
+    let ro;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(publish);
+      ro.observe(el);
+    }
+    window.addEventListener('resize', publish);
+    window.addEventListener('orientationchange', publish);
+
+    return () => {
+      if (ro) ro.disconnect();
+      window.removeEventListener('resize', publish);
+      window.removeEventListener('orientationchange', publish);
+      // Pages that render no dock must not reserve a phantom band.
+      root.style.setProperty('--sc-dock-h', '0px');
+    };
+  }, []);
 
   const [hovered, setHovered] = useState(null);
   const [pressed, setPressed] = useState(null);
@@ -107,6 +153,7 @@ export default function LiquidDock({ items = [], onLogout, onItemHover }) {
 
   return (
     <nav
+      ref={navRef}
       className="dock-bar"
       onMouseMove={handleMove}
       onMouseLeave={() => { reset(); setHovered(null); setPressed(null); }}
