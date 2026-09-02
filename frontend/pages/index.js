@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import Navbar from '../components/layout/Navbar';
 import Footer from '../components/layout/Footer';
 import AnimatedHero from '../components/ui/AnimatedHero';
@@ -204,6 +204,20 @@ export default function HomePage() {
   const timelineFillRef = useRef(null);
   const timelineRafRef = useRef(null);
 
+  // Demo video. preload="none" means not a single byte of the 15MB file is
+  // fetched until the visitor presses play, so the homepage cost is unchanged.
+  // The overlay is only a styled play affordance over the poster - playback
+  // itself is native <video controls>, no library.
+  const demoRef = useRef(null);
+  const [demoPlaying, setDemoPlaying] = useState(false);
+  const startDemo = () => {
+    const v = demoRef.current;
+    if (!v) return;
+    setDemoPlaying(true);
+    const played = v.play();
+    if (played && typeof played.catch === 'function') played.catch(() => {});
+  };
+
   useEffect(() => {
     const updateFill = () => {
       timelineRafRef.current = null;
@@ -238,6 +252,51 @@ export default function HomePage() {
       <Navbar />
 
       <AnimatedHero />
+
+      {/* PRODUCT DEMO VIDEO */}
+      <section className="sec sec-demo">
+        <div className="demo-glow" aria-hidden="true" />
+
+        <div className="shell shell-rel">
+          <FadeUp className="head">
+            <div className="pill pill-onnavy">Product Tour</div>
+            <h2 className="h2 h2-invert">See Syncoptrac in Action</h2>
+            <p className="lede lede-invert">
+              See how Syncoptrac helps you manage your institute — from students and attendance to fees, batches and enquiries.
+            </p>
+          </FadeUp>
+
+          <FadeUp delay={90}>
+            <div className="vidbox">
+              <video
+                ref={demoRef}
+                className="vid"
+                src="/videos/syncoptrac-demo.mp4"
+                poster="/videos/syncoptrac-demo-poster.jpg"
+                controls
+                preload="none"
+                playsInline
+                controlsList="nodownload"
+                onPlay={() => setDemoPlaying(true)}
+              />
+              {!demoPlaying && (
+                <button
+                  type="button"
+                  className="vplay"
+                  onClick={startDemo}
+                  aria-label="Play the Syncoptrac demo video"
+                >
+                  <span className="vplay-face">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <path d="M8 5.14v13.72a1 1 0 0 0 1.54.84l10.3-6.86a1 1 0 0 0 0-1.68L9.54 4.3A1 1 0 0 0 8 5.14z" />
+                    </svg>
+                  </span>
+                </button>
+              )}
+            </div>
+          </FadeUp>
+        </div>
+      </section>
 
       {/* CORE VALUE POINTS */}
       <section className="sec sec-value">
@@ -396,6 +455,76 @@ export default function HomePage() {
         }
         .lede-sm { font-size: 1rem; }
         .lede-invert { color: rgba(199, 215, 245, 0.75); }
+
+        /* ---- Demo video section ----
+           The box reserves the video's REAL 848x388 ratio (2.19:1 - the source is
+           NOT 16:9) through aspect-ratio, so the space is correct before the file
+           loads and the section cannot shift. object-fit: contain then guarantees
+           the frame is never cropped, stretched or distorted. */
+        .sec-demo {
+          background: linear-gradient(135deg, ${C.header} 0%, ${C.primary} 58%, ${C.secondary} 100%);
+          overflow: hidden;
+        }
+        .demo-glow {
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          background:
+            radial-gradient(680px 380px at 50% 0%, rgba(37, 99, 235, 0.2), transparent 68%),
+            radial-gradient(520px 320px at 50% 100%, rgba(92, 225, 230, 0.08), transparent 70%);
+        }
+        .vidbox {
+          position: relative;
+          width: 100%;
+          max-width: 58rem;
+          margin: 0 auto;
+          aspect-ratio: 848 / 388;
+          border-radius: 18px;
+          overflow: hidden;
+          background: #050F2C;
+          border: 1px solid rgba(147, 197, 253, 0.2);
+          box-shadow:
+            0 26px 64px rgba(3, 10, 32, 0.5),
+            inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        }
+        @supports not (aspect-ratio: 1 / 1) {
+          .vidbox { height: 0; padding-bottom: 45.75%; }
+        }
+        .vid {
+          display: block;
+          width: 100%;
+          height: 100%;
+          object-fit: contain;
+          background: #050F2C;
+        }
+        .vplay {
+          position: absolute;
+          inset: 0;
+          display: grid;
+          place-items: center;
+          padding: 0;
+          border: 0;
+          background: rgba(5, 15, 44, 0.26);
+          cursor: pointer;
+        }
+        .vplay-face {
+          display: grid;
+          place-items: center;
+          width: 74px;
+          height: 74px;
+          padding-left: 4px;
+          border-radius: 999px;
+          color: #ffffff;
+          background: linear-gradient(135deg, ${C.accent} 0%, ${C.accentHover} 100%);
+          box-shadow: 0 16px 36px rgba(37, 99, 235, 0.46);
+          transition: transform 320ms cubic-bezier(0.16, 1, 0.3, 1),
+                      box-shadow 320ms cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .vplay:hover .vplay-face {
+          transform: scale(1.06);
+          box-shadow: 0 20px 44px rgba(37, 99, 235, 0.56);
+        }
+        .vplay:focus-visible { outline: 2px solid #93C5FD; outline-offset: -4px; }
 
         /* ---- Value section ---- */
         .sec-value { background: ${C.bg}; }
@@ -646,6 +775,9 @@ export default function HomePage() {
           .hp :global(.head) { margin-bottom: 2.5rem; }
           .vgrid { grid-template-columns: minmax(0, 1fr); gap: 1.1rem; }
 
+          .vidbox { border-radius: 14px; }
+          .vplay-face { width: 60px; height: 60px; }
+
           .tl { margin-top: 2.25rem; }
           .tl-rail, .tl-fill, .tl-node, .tl-spacer { display: none; }
           .tl-row {
@@ -669,6 +801,8 @@ export default function HomePage() {
           .scard:hover { transform: none; }
           .node-ring { animation: none; }
           .tl-fill { transition: none; }
+          .vplay-face { transition: none; }
+          .vplay:hover .vplay-face { transform: none; }
         }
       `}</style>
     </div>
