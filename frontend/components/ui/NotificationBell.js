@@ -586,336 +586,6 @@ export default function NotificationBell() {
                 </footer>
               )}
             </aside>
-
-            <style jsx>{`
-              .nb-host {
-                position: fixed;
-                inset: 0;
-                z-index: 70;
-                display: flex;
-                justify-content: flex-end;
-                background: rgba(11, 31, 77, 0.42);
-                backdrop-filter: blur(6px);
-                -webkit-backdrop-filter: blur(6px);
-                animation: nb-fade var(--sc-d-base, 240ms) var(--sc-ease, ease)
-                  both;
-                /* The fixed dock stays exactly where it is. The drawer simply
-                   ends above it, so its action row can never be covered. */
-                padding-bottom: max(
-                  var(--sc-dock-h, 0px),
-                  env(safe-area-inset-bottom, 0px)
-                );
-              }
-              .nb-panel {
-                display: flex;
-                flex-direction: column;
-                width: 100%;
-                max-width: 26rem;
-                height: 100%;
-                min-height: 0;
-                background: var(--sc-card, #fff);
-                border-left: 1px solid var(--sc-border, #e5e7eb);
-                box-shadow: var(--sc-sh-4, 0 24px 48px rgba(11, 31, 77, 0.1));
-                animation: nb-slide var(--sc-d-slow, 420ms) var(--sc-ease, ease)
-                  both;
-              }
-              .nb-head {
-                flex: none;
-                padding: 16px 16px 12px;
-                border-bottom: 1px solid var(--sc-border, #e5e7eb);
-                background: var(--sc-card, #fff);
-              }
-              .nb-grip {
-                display: none;
-              }
-              .nb-head-row {
-                display: flex;
-                align-items: flex-start;
-                justify-content: space-between;
-                gap: 12px;
-              }
-              .nb-title {
-                margin: 0;
-                font-size: var(--sc-f-h3, 1.0625rem);
-                font-weight: 700;
-                letter-spacing: -0.01em;
-                color: var(--sc-text, #111827);
-              }
-              .nb-sub {
-                margin: 3px 0 0;
-                font-size: var(--sc-f-xs, 0.8125rem);
-                color: var(--sc-muted, #6b7280);
-              }
-              .nb-close {
-                flex: none;
-                display: grid;
-                place-items: center;
-                width: 34px;
-                height: 34px;
-                border-radius: 50%;
-                border: 1px solid var(--sc-border, #e5e7eb);
-                background: var(--sc-card, #fff);
-                color: var(--sc-muted, #6b7280);
-                cursor: pointer;
-                transition: background var(--sc-d-base, 240ms)
-                  var(--sc-ease, ease);
-              }
-              .nb-close:hover {
-                background: var(--sc-hover, #eff6ff);
-                color: var(--sc-navy, #0b1f4d);
-              }
-              .nb-body {
-                flex: 1 1 auto;
-                min-height: 0;
-                overflow-y: auto;
-                overscroll-behavior: contain;
-                -webkit-overflow-scrolling: touch;
-              }
-              .nb-list {
-                list-style: none;
-                margin: 0;
-                padding: 0;
-              }
-              .nb-item {
-                position: relative;
-                border-bottom: 1px solid var(--sc-border, #e5e7eb);
-              }
-              .nb-item.is-unread {
-                background: var(--sc-accent-tint, rgba(37, 99, 235, 0.08));
-              }
-              .nb-item.is-unread::before {
-                content: "";
-                position: absolute;
-                inset: 0 auto 0 0;
-                width: 3px;
-                background: var(--sc-accent, #2563eb);
-              }
-              .nb-item.is-urgent::before {
-                content: "";
-                position: absolute;
-                inset: 0 auto 0 0;
-                width: 3px;
-                background: var(--sc-danger, #ef4444);
-              }
-              .nb-item-btn {
-                display: flex;
-                gap: 11px;
-                width: 100%;
-                padding: 14px 16px;
-                background: none;
-                border: 0;
-                font: inherit;
-                text-align: left;
-                cursor: pointer;
-                color: inherit;
-              }
-              .nb-item-btn:hover {
-                background: rgba(37, 99, 235, 0.05);
-              }
-              .nb-ico {
-                flex: none;
-                display: grid;
-                place-items: center;
-                width: 30px;
-                height: 30px;
-                border-radius: 9px;
-                margin-top: 1px;
-              }
-              .nb-item-main {
-                display: block;
-                min-width: 0;
-                flex: 1 1 auto;
-              }
-              .nb-item-top {
-                display: flex;
-                align-items: center;
-                gap: 8px;
-              }
-              .nb-item-title {
-                font-size: var(--sc-f-sm, 0.875rem);
-                font-weight: 700;
-                letter-spacing: -0.01em;
-                color: var(--sc-text, #111827);
-                overflow-wrap: anywhere;
-              }
-              .nb-dot {
-                flex: none;
-                width: 7px;
-                height: 7px;
-                border-radius: 50%;
-                background: var(--sc-accent, #2563eb);
-              }
-              .nb-meta {
-                display: flex;
-                align-items: center;
-                flex-wrap: wrap;
-                gap: 6px;
-                margin: 5px 0 0;
-              }
-              .nb-chip {
-                display: inline-flex;
-                align-items: center;
-                padding: 2px 8px;
-                border-radius: var(--sc-r-pill, 999px);
-                font-size: var(--sc-f-micro, 0.6875rem);
-                font-weight: 700;
-                white-space: nowrap;
-              }
-              .nb-when {
-                font-size: var(--sc-f-micro, 0.6875rem);
-                color: var(--sc-muted, #6b7280);
-                white-space: nowrap;
-              }
-              .nb-msg {
-                display: block;
-                margin: 7px 0 0;
-                font-size: var(--sc-f-xs, 0.8125rem);
-                line-height: 1.55;
-                color: var(--sc-muted, #6b7280);
-                overflow-wrap: anywhere;
-              }
-              .nb-msg-full {
-                color: var(--sc-text, #111827);
-                white-space: pre-line;
-              }
-              .nb-foot {
-                flex: none;
-                display: flex;
-                justify-content: flex-end;
-                padding: 12px 16px;
-                border-top: 1px solid var(--sc-border, #e5e7eb);
-                background: var(--sc-card, #fff);
-              }
-              .nb-state {
-                display: grid;
-                justify-items: center;
-                gap: 9px;
-                padding: 52px 26px;
-                text-align: center;
-              }
-              .nb-state-ico {
-                display: grid;
-                place-items: center;
-                width: 46px;
-                height: 46px;
-                border-radius: 50%;
-                background: var(--sc-accent-tint, rgba(37, 99, 235, 0.08));
-                color: var(--sc-accent, #2563eb);
-              }
-              .nb-state-err {
-                background: var(--sc-danger-tint, rgba(239, 68, 68, 0.1));
-                color: var(--sc-danger, #ef4444);
-              }
-              .nb-state-t {
-                margin: 0;
-                font-size: var(--sc-f-sm, 0.875rem);
-                font-weight: 650;
-                color: var(--sc-text, #111827);
-              }
-              .nb-state-s {
-                margin: 0;
-                font-size: var(--sc-f-xs, 0.8125rem);
-                color: var(--sc-muted, #6b7280);
-              }
-              .nb-skwrap {
-                padding: 8px 0;
-              }
-              .nb-sk-row {
-                display: flex;
-                gap: 11px;
-                padding: 14px 16px;
-                animation: nb-fade var(--sc-d-base, 240ms) var(--sc-ease, ease)
-                  both;
-              }
-              .nb-sk-dot {
-                flex: none;
-                width: 30px;
-                height: 30px;
-                border-radius: 9px;
-              }
-              .nb-sk-lines {
-                flex: 1 1 auto;
-                display: grid;
-                gap: 7px;
-              }
-              .nb-sk-l1 {
-                height: 11px;
-                width: 62%;
-                border-radius: 6px;
-              }
-              .nb-sk-l2 {
-                height: 11px;
-                width: 88%;
-                border-radius: 6px;
-              }
-
-              @keyframes nb-fade {
-                from {
-                  opacity: 0;
-                }
-                to {
-                  opacity: 1;
-                }
-              }
-              @keyframes nb-slide {
-                from {
-                  opacity: 0;
-                  transform: translate3d(18px, 0, 0);
-                }
-                to {
-                  opacity: 1;
-                  transform: translate3d(0, 0, 0);
-                }
-              }
-              @keyframes nb-rise {
-                from {
-                  opacity: 0;
-                  transform: translate3d(0, 16px, 0);
-                }
-                to {
-                  opacity: 1;
-                  transform: translate3d(0, 0, 0);
-                }
-              }
-
-              /* Mobile: bottom sheet instead of a side drawer. It ends above the
-                 dock and the safe-area inset, so the action row stays tappable. */
-              @media (max-width: 640px) {
-                .nb-host {
-                  align-items: flex-end;
-                  justify-content: stretch;
-                }
-                .nb-panel {
-                  max-width: none;
-                  height: auto;
-                  max-height: 82vh;
-                  max-height: 82dvh;
-                  border-left: 0;
-                  border-top-left-radius: var(--sc-r-xl, 24px);
-                  border-top-right-radius: var(--sc-r-xl, 24px);
-                  animation-name: nb-rise;
-                }
-                .nb-grip {
-                  display: block;
-                  width: 38px;
-                  height: 4px;
-                  margin: 0 auto 10px;
-                  border-radius: 999px;
-                  background: var(--sc-border, #e5e7eb);
-                }
-                .nb-foot-btn {
-                  width: 100%;
-                }
-              }
-
-              @media (prefers-reduced-motion: reduce) {
-                .nb-host,
-                .nb-panel,
-                .nb-sk-row {
-                  animation: none;
-                }
-              }
-            `}</style>
           </div>,
           portalHost,
         )}
@@ -972,6 +642,331 @@ export default function NotificationBell() {
         @media (prefers-reduced-motion: reduce) {
           .nb-bell {
             transition: none;
+          }
+        }
+
+        /* ===== drawer / panel / list / states (portal subtree) ===== */
+        .nb-host {
+          position: fixed;
+          inset: 0;
+          z-index: 70;
+          display: flex;
+          justify-content: flex-end;
+          background: rgba(11, 31, 77, 0.42);
+          backdrop-filter: blur(6px);
+          -webkit-backdrop-filter: blur(6px);
+          animation: nb-fade var(--sc-d-base, 240ms) var(--sc-ease, ease) both;
+          /* The fixed dock stays exactly where it is. The drawer simply
+             ends above it, so its action row can never be covered. */
+          padding-bottom: max(
+            var(--sc-dock-h, 0px),
+            env(safe-area-inset-bottom, 0px)
+          );
+        }
+        .nb-panel {
+          display: flex;
+          flex-direction: column;
+          width: 100%;
+          max-width: 26rem;
+          height: 100%;
+          min-height: 0;
+          background: var(--sc-card, #fff);
+          border-left: 1px solid var(--sc-border, #e5e7eb);
+          box-shadow: var(--sc-sh-4, 0 24px 48px rgba(11, 31, 77, 0.1));
+          animation: nb-slide var(--sc-d-slow, 420ms) var(--sc-ease, ease) both;
+        }
+        .nb-head {
+          flex: none;
+          padding: 16px 16px 12px;
+          border-bottom: 1px solid var(--sc-border, #e5e7eb);
+          background: var(--sc-card, #fff);
+        }
+        .nb-grip {
+          display: none;
+        }
+        .nb-head-row {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 12px;
+        }
+        .nb-title {
+          margin: 0;
+          font-size: var(--sc-f-h3, 1.0625rem);
+          font-weight: 700;
+          letter-spacing: -0.01em;
+          color: var(--sc-text, #111827);
+        }
+        .nb-sub {
+          margin: 3px 0 0;
+          font-size: var(--sc-f-xs, 0.8125rem);
+          color: var(--sc-muted, #6b7280);
+        }
+        .nb-close {
+          flex: none;
+          display: grid;
+          place-items: center;
+          width: 34px;
+          height: 34px;
+          border-radius: 50%;
+          border: 1px solid var(--sc-border, #e5e7eb);
+          background: var(--sc-card, #fff);
+          color: var(--sc-muted, #6b7280);
+          cursor: pointer;
+          transition: background var(--sc-d-base, 240ms) var(--sc-ease, ease);
+        }
+        .nb-close:hover {
+          background: var(--sc-hover, #eff6ff);
+          color: var(--sc-navy, #0b1f4d);
+        }
+        .nb-body {
+          flex: 1 1 auto;
+          min-height: 0;
+          overflow-y: auto;
+          overscroll-behavior: contain;
+          -webkit-overflow-scrolling: touch;
+        }
+        .nb-list {
+          list-style: none;
+          margin: 0;
+          padding: 0;
+        }
+        .nb-item {
+          position: relative;
+          border-bottom: 1px solid var(--sc-border, #e5e7eb);
+        }
+        .nb-item.is-unread {
+          background: var(--sc-accent-tint, rgba(37, 99, 235, 0.08));
+        }
+        .nb-item.is-unread::before {
+          content: "";
+          position: absolute;
+          inset: 0 auto 0 0;
+          width: 3px;
+          background: var(--sc-accent, #2563eb);
+        }
+        .nb-item.is-urgent::before {
+          content: "";
+          position: absolute;
+          inset: 0 auto 0 0;
+          width: 3px;
+          background: var(--sc-danger, #ef4444);
+        }
+        .nb-item-btn {
+          display: flex;
+          gap: 11px;
+          width: 100%;
+          padding: 14px 16px;
+          background: none;
+          border: 0;
+          font: inherit;
+          text-align: left;
+          cursor: pointer;
+          color: inherit;
+        }
+        .nb-item-btn:hover {
+          background: rgba(37, 99, 235, 0.05);
+        }
+        .nb-ico {
+          flex: none;
+          display: grid;
+          place-items: center;
+          width: 30px;
+          height: 30px;
+          border-radius: 9px;
+          margin-top: 1px;
+        }
+        .nb-item-main {
+          display: block;
+          min-width: 0;
+          flex: 1 1 auto;
+        }
+        .nb-item-top {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .nb-item-title {
+          font-size: var(--sc-f-sm, 0.875rem);
+          font-weight: 700;
+          letter-spacing: -0.01em;
+          color: var(--sc-text, #111827);
+          overflow-wrap: anywhere;
+        }
+        .nb-dot {
+          flex: none;
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: var(--sc-accent, #2563eb);
+        }
+        .nb-meta {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 6px;
+          margin: 5px 0 0;
+        }
+        .nb-chip {
+          display: inline-flex;
+          align-items: center;
+          padding: 2px 8px;
+          border-radius: var(--sc-r-pill, 999px);
+          font-size: var(--sc-f-micro, 0.6875rem);
+          font-weight: 700;
+          white-space: nowrap;
+        }
+        .nb-when {
+          font-size: var(--sc-f-micro, 0.6875rem);
+          color: var(--sc-muted, #6b7280);
+          white-space: nowrap;
+        }
+        .nb-msg {
+          display: block;
+          margin: 7px 0 0;
+          font-size: var(--sc-f-xs, 0.8125rem);
+          line-height: 1.55;
+          color: var(--sc-muted, #6b7280);
+          overflow-wrap: anywhere;
+        }
+        .nb-msg-full {
+          color: var(--sc-text, #111827);
+          white-space: pre-line;
+        }
+        .nb-foot {
+          flex: none;
+          display: flex;
+          justify-content: flex-end;
+          padding: 12px 16px;
+          border-top: 1px solid var(--sc-border, #e5e7eb);
+          background: var(--sc-card, #fff);
+        }
+        .nb-state {
+          display: grid;
+          justify-items: center;
+          gap: 9px;
+          padding: 52px 26px;
+          text-align: center;
+        }
+        .nb-state-ico {
+          display: grid;
+          place-items: center;
+          width: 46px;
+          height: 46px;
+          border-radius: 50%;
+          background: var(--sc-accent-tint, rgba(37, 99, 235, 0.08));
+          color: var(--sc-accent, #2563eb);
+        }
+        .nb-state-err {
+          background: var(--sc-danger-tint, rgba(239, 68, 68, 0.1));
+          color: var(--sc-danger, #ef4444);
+        }
+        .nb-state-t {
+          margin: 0;
+          font-size: var(--sc-f-sm, 0.875rem);
+          font-weight: 650;
+          color: var(--sc-text, #111827);
+        }
+        .nb-state-s {
+          margin: 0;
+          font-size: var(--sc-f-xs, 0.8125rem);
+          color: var(--sc-muted, #6b7280);
+        }
+        .nb-skwrap {
+          padding: 8px 0;
+        }
+        .nb-sk-row {
+          display: flex;
+          gap: 11px;
+          padding: 14px 16px;
+          animation: nb-fade var(--sc-d-base, 240ms) var(--sc-ease, ease) both;
+        }
+        .nb-sk-dot {
+          flex: none;
+          width: 30px;
+          height: 30px;
+          border-radius: 9px;
+        }
+        .nb-sk-lines {
+          flex: 1 1 auto;
+          display: grid;
+          gap: 7px;
+        }
+        .nb-sk-l1 {
+          height: 11px;
+          width: 62%;
+          border-radius: 6px;
+        }
+        .nb-sk-l2 {
+          height: 11px;
+          width: 88%;
+          border-radius: 6px;
+        }
+
+        @keyframes nb-fade {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
+        }
+        @keyframes nb-slide {
+          from {
+            opacity: 0;
+            transform: translate3d(18px, 0, 0);
+          }
+          to {
+            opacity: 1;
+            transform: translate3d(0, 0, 0);
+          }
+        }
+        @keyframes nb-rise {
+          from {
+            opacity: 0;
+            transform: translate3d(0, 16px, 0);
+          }
+          to {
+            opacity: 1;
+            transform: translate3d(0, 0, 0);
+          }
+        }
+
+        /* Mobile: bottom sheet instead of a side drawer. It ends above the
+           dock and the safe-area inset, so the action row stays tappable. */
+        @media (max-width: 640px) {
+          .nb-host {
+            align-items: flex-end;
+            justify-content: stretch;
+          }
+          .nb-panel {
+            max-width: none;
+            height: auto;
+            max-height: 82vh;
+            max-height: 82dvh;
+            border-left: 0;
+            border-top-left-radius: var(--sc-r-xl, 24px);
+            border-top-right-radius: var(--sc-r-xl, 24px);
+            animation-name: nb-rise;
+          }
+          .nb-grip {
+            display: block;
+            width: 38px;
+            height: 4px;
+            margin: 0 auto 10px;
+            border-radius: 999px;
+            background: var(--sc-border, #e5e7eb);
+          }
+          .nb-foot-btn {
+            width: 100%;
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .nb-host,
+          .nb-panel,
+          .nb-sk-row {
+            animation: none;
           }
         }
       `}</style>
