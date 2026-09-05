@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { clearAuth, getUser, handleDisplaced } from '../../lib/api';
 import api from '../../lib/api';
 import LiquidDock from '../ui/LiquidDock';
+import NotificationBell from '../ui/NotificationBell';
 import DesignSystem from '../ds/DesignSystem';
 
 const NAV = [
@@ -144,8 +145,12 @@ export default function InstituteLayout({ children, title }) {
             </span>
           </div>
 
-          {/* Institute chip */}
-          <div style={{
+          {/* Right cluster: notification bell + institute chip */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+            <NotificationBell />
+
+            {/* Institute chip */}
+            <div style={{
             display: 'flex', alignItems: 'center', gap: 6,
             padding: '4px 10px',
             background: 'rgba(92,225,230,0.07)',
@@ -167,6 +172,7 @@ export default function InstituteLayout({ children, title }) {
             }}>
               {user?.instituteName || 'Institute'}
             </span>
+            </div>
           </div>
         </div>
 

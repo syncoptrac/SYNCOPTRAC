@@ -12,6 +12,11 @@ const adminRoutes = require('./routes/admin');
 const instituteRoutes = require('./routes/institute');
 const sheetsRoutes = require('./routes/sheets');
 const leadsRoutes = require('./routes/leads');
+// Platform announcements. Two routers: one for institutes, one for admins.
+const {
+  instituteRouter: notificationRoutes,
+  adminRouter: adminNotificationRoutes,
+} = require('./routes/notifications');
 
 const app = express();
 
@@ -178,6 +183,11 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/institute', instituteRoutes);
 app.use('/api/sheets', sheetsRoutes);
 app.use('/api/leads', leadLimiter, leadsRoutes);
+// Institute-facing announcement reads/read-state (requireInstitute inside).
+app.use('/api/notifications', notificationRoutes);
+// Admin-only announcement management (requireAdmin inside). Mounted under
+// /api/admin/* to match the existing admin surface.
+app.use('/api/admin/notifications', adminNotificationRoutes);
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date() }));
