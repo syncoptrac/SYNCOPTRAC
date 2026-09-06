@@ -14,6 +14,18 @@ const leadSchema = new mongoose.Schema({
     default: 'new' 
   },
   notes: { type: String },
+  // ─── Confirmation-email tracking (additive) ──────────────────────────────
+  // confirmationSentAt doubles as the exactly-once lock for the applicant
+  // confirmation email: the send is claimed with a conditional atomic update on
+  // { confirmationSentAt: null }, which in MongoDB also matches documents where
+  // the field is ABSENT — so leads created before this feature need no backfill
+  // or migration, and no existing field is touched.
+  confirmationSentAt: { type: Date, default: null },
+  confirmationStatus: {
+    type: String,
+    enum: ['sent', 'failed', 'skipped', 'suppressed_duplicate'],
+    default: undefined,
+  },
   createdAt: { type: Date, default: Date.now }
 });
 
